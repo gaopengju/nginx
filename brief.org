@@ -4,5 +4,11 @@
 
 由于需要了解的openresty最新代码是1.11.2版本，其对应的nginx版本为1.11.2, 因此在
 release-1.11.2拉出了此分支。
+  #+BEGIN_EXAMPLE
+  $ git checkout release-1.11.2
+  $ git checkout -b code-note
+  $ ...
+  $ git push origin code-note:code-note
+  #+END_EXAMPLE
 
 希望通过不断的深入了解nginx，能够在WAF架构设计、高速服务器架构设计等方面开阔眼界。
