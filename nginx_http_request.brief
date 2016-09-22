@@ -1,0 +1,470 @@
+本文档摘录HTTP的请求处理，备忘
+
+<NOTE>
+    1) 文件：~/src/http/ngx_http_request.c
+
+<NOTE>建立监听插口的流程
+--ngx_http_block()                      解析http{}
+    --ngx_http_core_server()            解析http{server{}}
+        --ngx_http_core_listen()        解析http{server{listen xxx;}}
+            --ngx_http_add_listen()     填充ngx_http_core_main_conf_t->ports[]
+                                            port  -->addr1 --> server1
+                                                           --> server2
+                                                  -->addr2 --> server3
+                                            如图9-1 p184《深入剖析nginx》
+    --...
+    --ngx_http_optimize_servers()       根据ngx_http_core_main_conf_t->ports[]
+                                        建立监听插口，并设置其处理函数
+        --ngx_http_init_listening()
+            --ngx_http_add_listening()  添加到ngx_cycle->listening[], 并设置
+                                        ->handler = ngx_http_init_connection()
+
+            --ngx_http_add_addrs()      初始化ngx_listening_t->servers[]
+                                            refer <nginx_socket.brief>
+                                        用于查找客户端请求对应的服务器
+
+                                        参考图9-2 p185
+                                        《深入剖析nginx》
+
+--ngx_init_cycle()
+    --ngx_conf_parse()                  解析配置文件, 就是上述部分, 嘻嘻
+    --..
+    --ngx_open_listening_sockets()      遍历ngx_cycle->listening[], 建立
+                                        监听插口
+        --ngx_socket()
+        --bind()
+        --listen()
+    --ngx_configure_listening_sockets() 配置监听插口属性, 如缓存等
+        --setsockopt()
+
+<NOTE>接收客户端请求的处理流程
+--ngx_worker_process_cycle()            各工作进程的处理入口
+    --ngx_worker_process_init()
+        --ngx_modules[]->init_process()
+        -->ngx_event_process_init()     ngx_event_core_module模块儿的进程
+            --ngx_get_connection()      初始化, 遍历ngx_cycle->listening[]
+                                        为每个监听插口获取空闲连接结构, 并
+                                        设置ngx_connection_t->read->handler
+                                        = ngx_event_accept()
+    --...
+    --for(;;)                           工作进程主循环
+        --ngx_process_events_and_timers()
+            --ngx_trylock_accept_mutex()
+                --ngx_enable_accept_events()
+                    --ngx_add_event()       抢到互斥锁后, 才能监听listen事件
+            --ngx_process_events()          处理事件入口
+                --epoll_wait()                  等待事件, 时限为最近的定时器
+                --ngx_post_event()              有事件到达, 加入队列
+                                                ngx_posted_events/
+                                                ngx_posted_accept_events
+            --ngx_event_process_posted()    处理队列ngx_posted_accept_events
+                                                ACCEPT事件, 处理函数
+                                                ngx_event_accept(), 参考
+                                                <nginx_event.brief>
+
+                                                注意：ngx_event_accept()调用
+                                                ngx_http_init_connection(),
+                                                创建连接信息结构
+                                                ngx_http_connection_t, 并
+                                                通过此连接的目的地址匹配监
+                                                听目的地址查找对应的服务器
+            --ngx_event_process_posted()    处理队列ngx_posted_events,
+                                                起始的用户请求数据, 处理函数
+                                                ngx_http_wait_request_handler()
+                                                (注: 在函数ngx_event_accept中
+                                                 设置的此句柄--ACCEPT事件处理)
+                                                
+                                                更进一步的用户数据, ...
+
+
+1. ngx_http_wait_request_handler
+2. ngx_http_process_request_line
+3. ngx_http_process_request_headers
+4. ngx_http_finalize_request
+10.全局数据结构
+    ---ngx_http_request_t
+    ---ngx_http_connection_t
+
+
+1. ngx_http_wait_request_handler()
+    @role: 处理HTTP请求的入口函数, 在处理accept事件时被设置,
+            refer <nginx_event.brief>; 
+            接收用户请求数据,
+            建立请求对象ngx_http_request_t,
+            设置http头处理句柄, 并进入处理
+
+    --if(ngx_event_t->timedout)     客户端请求超时
+        --ngx_log_error()
+        --ngx_http_close_connection()
+    --if(ngx_connection_t->close)   链接关闭
+        --ngx_http_close_connection()
+    --ngx_connection_t->recv()      接收客户端请求数据
+        --ngx_recv()                    在<nginx_event.brief>赋值
+            -->ngx_io.recv()
+            -->ngx_os_io.recv()         <nginx_mod_epoll.brief>
+            -->ngx_unix_recv()
+                --recv()
+    --ngx_reusable_connection()     禁止连接结构重用
+        --赋值ngx_connection_t->reusable    = 0
+    --ngx_http_create_request()     创建请求，赋值ngx_connection_t->data
+        --ngx_create_pool()
+        --ngx_pcalloc()                 分配请求结构ngx_http_request_t,
+        --                              并初始化
+            --赋值->http_connection
+            --关联->connection
+            --设置->read_event_handler      = ngx_http_block_reading()
+            --初始化->header_in/headers_out
+            --初始化->ctx
+            --初始化->variables
+            --初始化->start_sec/start_msec
+            --设置->http_state              = NGX_HTTP_READING_REQUEST_STATE
+    --                              设置读事件处理函数
+        --ngx_event_t->handler          = ngx_http_process_request_line()
+    --ngx_http_process_request_line()
+                                    处理HTTP请求行
+
+2. ngx_http_process_request_line()
+    @role: 处理HTTP请求行, 如果uri中指定了host信息, 并查找对应此请求的服务器
+
+    --ngx_http_read_request_header()
+        --recv()                    读取头部信息(已经在缓存中时，直接返回)
+    --ngx_http_parse_request_line() 解析HTTP的请求行
+        --switch()
+            --case ...
+    --ngx_http_process_request_uri()解析请求URI, 赋值xxx->uri/args等
+    --ngx_http_validate_host()      如果uri中有host字段, 验证host格式正确
+    --ngx_http_set_virtual_server() 并查找对应的服务器, 通过匹配host和 
+                                        ngx_http_request_t->
+                                        http_connection->addr_conf->
+                                        virtual_names查找
+        --ngx_http_find_virtual_server()
+    --ngx_http_process_request()    对于HTTP 1.0, 进入此函数处理
+    --                              设置读事件处理函数
+        --ngx_event_t->handler          = ngx_http_process_request_headers()
+    --ngx_http_process_request_headers()
+                                    处理请求头部选项
+                                    
+3. ngx_http_process_request_headers()
+    @role: 处理请求头部选项
+    @note: 
+        1)后续用xxx标识ngx_http_request_t
+        2)各阶段的回调->handler()可能有多个返回值, 含义不同
+            NGX_OK          当前阶段成功处理, 必须进入下一阶段, 刷新xxx->
+                                phase_handler = ngx_http_phase_handler_t->next 
+
+            NGX_AGAIN
+            NGX_DONE        表示当前句柄需要再次处理/处理结束, 但仍需等待
+                                依赖的事情发生; 不刷新xxx->phase_handler,
+                                返回NGX_OK, 导致退出外层的
+                                ngx_http_core_run_phases()函数循环
+
+            NGX_DECLINED    当前处理句柄拒绝或不符合条件, 继续下一个句柄
+                                (可能是同阶段或直接过度到下一阶段), 刷新
+                                xxx->phase_handler++
+            NGX_ERROR
+            NGX_HTTP_FORBIDDEN
+            NGX_HTTP_UNAUTHORIZED
+            ...             表示处理出错
+        3)->handler()的不同返回值, 将使得ngx_http_core_run_phases()的while
+            循环执行不同的动作, 要么退出, 要么继续下一个句柄, 要么下一个
+            阶段的句柄
+
+    --ngx_http_read_request_header()
+        --recv()                    尽可能多的读取头部内存
+    --ngx_http_parse_header_line()  以行为单位解析头部字段, 并存放在xxx
+                                        ->headers_in->headers链表中
+    --ngx_hash_find()               从ngx_http_core_main_conf_t->
+                                        headers_in_hash查找此头部,
+    --ngx_http_header_t->handler()      并执行对应的处理动作, 初始化
+                                        ngx_http_request_t->headers_in
+                                        结构的指针变量; 指向的地址为
+                                        xxx->headers_in->headers链表对象
+    --                              头部解析完毕后
+        --设置xxx->http_state           = NGX_HTTP_PROCESS_REQUEST_STATE
+        --ngx_http_process_request_header()
+                                        检测同步参数是否有冲突或错误?
+        --ngx_http_process_request()    进入HTTP的phase处理
+            --ngx_del_timer()               如果设置了读事件定时器，删除
+            --设置ngx_event_t->handler      = ngx_http_request_handler()
+                                                连接读、写事件处理句柄
+            --设置xxx->read_event_handler   = ngx_http_block_reading()
+                                                请求读事件句柄
+            --ngx_http_handler()            <Bang!!!>调用各phase的处理函数
+                --赋值xxx->keepalive
+                --赋值xxx->phase_handler        = 0, 从第一阶段开始
+                --设置xxx->write_event_handler 
+                                                = ngx_http_core_run_phases
+                --ngx_http_core_run_phases()
+                                                运行ngx_http_core_main_conf_t
+                                                ->phase_engine.handlers[].
+                                                checker(), 进而调用->handler()
+            --ngx_http_run_posted_requests() 
+                                            请求处理完毕，处理后继的子请求
+                --调用xxx->write_event_handler()
+
+
+10.全局数据结构
+    10.1 ngx_http_request_t
+    @file: ~/src/http/ngx_http_request.h
+    @role: HTTP的请求信息结构
+
+    typedef struct ngx_http_request_s     ngx_http_request_t;
+
+    struct ngx_http_request_s {
+        uint32_t signature;     NGX_HTTP_MODULE\"HTTP"
+        ngx_connection_t *connection;   
+                                对应的连接结构
+
+        void   **ctx;           每个请求自有的配置环境?
+
+        void   **main_conf;     对应(本次请求)连接服务器配置信息
+        void   **srv_conf;      ...
+        void   **loc_conf;      最终匹配到的location配置环境
+
+        ngx_http_event_handler_pt read_event_handler;
+                                读句柄, ngx_http_block_reading()
+        ngx_http_event_handler_pt write_event_handler;
+                                写句柄, ngx_http_core_run_phases()
+
+        ngx_http_upstream_t *upstream;
+                                对应的upstream处理需要的信息
+        ngx_array_t   *upstream_states;     /*ngx_http_upstream_state_t*/
+
+        ngx_pool_t                       *pool;
+        ngx_buf_t *header_in;   当前请求头所在的内存buffer指针
+
+        ngx_http_headers_in_t  headers_in;
+        ngx_http_headers_out_t headers_out;
+                                请求头/输出头信息
+                                其中headers_in->headers链表存储解析请求头
+                                时的结果, 而headers_in中的指针变量则指向
+                                此链表的对象(从而间接指向请求头所在的缓存
+                                减少内存拷贝, 多了的这层结构就是为了组织
+                                更多的信息而已)
+
+        ngx_http_request_body_t *request_body;
+                                用于upstream时, 用于描述发送到后端服务器
+                                的信息; ->post_handler=ngx_http_upstream_init
+
+        time_t  lingering_time;
+        time_t  start_sec;      
+        ngx_msec_t start_msec;  请求时间, ngx_timeofday()
+
+        ngx_uint_t method;      请求方法, NGX_HTTP_GET/_HEAD/...
+        ngx_uint_t http_version;    = ->http_major * 1000 + ->http_minor
+
+        ngx_str_t request_line; 请求行
+        ngx_str_t uri;          请求URI
+        ngx_str_t args;
+        ngx_str_t exten;
+        ngx_str_t unparsed_uri;
+
+        ngx_str_t method_name;      请求方法
+        ngx_str_t                         http_protocol;
+
+        ngx_chain_t                      *out;
+        ngx_http_request_t *main;   当前是否为主请求
+        ngx_http_request_t *parent;
+        ngx_http_postponed_request_t *postponed;
+        ngx_http_post_subrequest_t   *post_subrequest;
+        ngx_http_posted_request_t    *posted_requests;
+
+        ngx_int_t  phase_handler;   当前对应的处理phase索引
+        ngx_http_handler_pt content_handler;
+        ngx_uint_t access_code;
+
+        ngx_http_variable_value_t *variables;
+                                    本次请求对应的变量
+
+#if (NGX_PCRE)
+        ngx_uint_t                        ncaptures;
+        int                              *captures;
+        u_char                           *captures_data;
+#endif
+
+        size_t                            limit_rate;
+        size_t                            limit_rate_after;
+
+        /* used to learn the Apache compatible response length without a header */
+        size_t                            header_size;
+
+        off_t request_length;       请求行长度
+
+        ngx_uint_t                        err_status;
+
+        ngx_http_connection_t *http_connection;   
+                                    对应此http连接的配置服务器信息, 建立
+                                    连接时被ngx_connection_t->data索引;
+                                    接收到用户请求后, ngx_connection_t->data
+                                    用来索引本结构, 原值被此变量索引
+        ngx_http_log_handler_pt           log_handler;
+
+        ngx_http_cleanup_t               *cleanup;
+
+        unsigned  subrequests:8;
+        unsigned  count:8;
+        unsigned  blocked:8;
+
+        unsigned  aio:1;
+
+        unsigned   http_state:4;        当前的处理状态
+                                            NGX_HTTP_INITING_REQUEST_STATE
+                                            NGX_HTTP_READING_REQUEST_STATE
+                                            NGX_HTTP_PROCESS_REQUEST_STATE
+
+                                            NGX_HTTP_CONNECT_UPSTREAM_STATE
+                                            NGX_HTTP_WRITING_UPSTREAM_STATE
+                                            NGX_HTTP_READING_UPSTREAM_STATE
+
+                                            NGX_HTTP_WRITING_REQUEST_STATE
+                                            NGX_HTTP_LINGERING_CLOSE_STATE
+                                            NGX_HTTP_KEEPALIVE_STATE
+        /* URI with "/." and on Win32 with "//" */
+        unsigned                          complex_uri:1;
+
+        /* URI with "%" */
+        unsigned                          quoted_uri:1;
+
+        /* URI with "+" */
+        unsigned                          plus_in_uri:1;
+
+        /* URI with " " */
+        unsigned                          space_in_uri:1;
+
+        unsigned                          invalid_header:1;
+
+        unsigned                          add_uri_to_alias:1;
+        unsigned                          valid_location:1;
+        unsigned                          valid_unparsed_uri:1;
+        unsigned                          uri_changed:1;
+        unsigned                          uri_changes:4;
+
+        unsigned                          request_body_in_single_buf:1;
+        unsigned                          request_body_in_file_only:1;
+        unsigned                          request_body_in_persistent_file:1;
+        unsigned                          request_body_in_clean_file:1;
+        unsigned                          request_body_file_group_access:1;
+        unsigned                          request_body_file_log_level:3;
+        unsigned                          request_body_no_buffering:1;
+
+        unsigned                          subrequest_in_memory:1;
+        unsigned                          waited:1;
+
+#if (NGX_HTTP_CACHE)
+        unsigned                          cached:1;
+#endif
+
+#if (NGX_HTTP_GZIP)
+        unsigned                          gzip_tested:1;
+        unsigned                          gzip_ok:1;
+        unsigned                          gzip_vary:1;
+#endif
+
+        unsigned                          proxy:1;
+        unsigned                          bypass_cache:1;
+        unsigned                          no_cache:1;
+
+        /*
+         * instead of using the request context data in
+         * ngx_http_limit_conn_module and ngx_http_limit_req_module
+         * we use the single bits in the request structure
+         */
+        unsigned limit_conn_set:1;
+        unsigned limit_req_set:1;
+
+        unsigned pipeline:1;
+        unsigned chunked:1;
+        unsigned header_only:1;
+        unsigned keepalive:1;           是否支持长链接?
+        unsigned lingering_close:1;
+        unsigned discard_body:1;
+        unsigned reading_body:1;
+        unsigned internal:1;
+        unsigned error_page:1;
+        unsigned filter_finalize:1;
+        unsigned post_action:1;
+        unsigned request_complete:1;    请求处理完毕
+        unsigned request_output:1;
+        unsigned header_sent:1;
+        unsigned expect_tested:1;
+        unsigned root_tested:1;
+        unsigned done:1;
+        unsigned logged:1;
+
+        unsigned buffered:4;
+
+        unsigned main_filter_need_in_memory:1;
+        unsigned filter_need_in_memory:1;
+        unsigned filter_need_temporary:1;
+        unsigned allow_ranges:1;
+        unsigned single_range:1;
+        unsigned disable_not_modified:1;
+
+#if (NGX_STAT_STUB)
+        unsigned                          stat_reading:1;
+        unsigned                          stat_writing:1;
+#endif
+
+        /* used to parse HTTP headers */
+
+        ngx_uint_t     state;       解析http头时的状态机, 内置在函数
+                                        ngx_http_parse_request_line()中
+        ngx_uint_t header_hash;     请求头部某个字段的hash值
+        ngx_uint_t lowcase_index;
+        u_char  lowcase_header[NGX_HTTP_LC_HEADER_LEN];
+                                    头部的值
+
+        u_char                           *header_name_start;
+        u_char                           *header_name_end;
+        u_char                           *header_start;
+        u_char                           *header_end;
+
+        /*
+         * a memory that can be reused after parsing a request line
+         * via ngx_http_ephemeral_t
+         */
+
+        u_char  *uri_start;         请求行中'/'所在的位置
+        u_char  *uri_end;
+        u_char  *uri_ext;
+        u_char  *args_start;
+        u_char  *request_start;     指向GET/PUT/POST等的第一个字节
+        u_char  *request_end;       指请求行的最后一个字节
+        u_char  *method_end;        指向GET/PUT/POST等的最后一个字节
+        u_char  *schema_start;      scheme起始位置
+        u_char  *schema_end;
+        u_char  *host_start;
+        u_char  *host_end;
+        u_char  *port_start;
+        u_char  *port_end;
+
+        unsigned http_minor:16;     版本号
+        unsigned http_major:16;
+    };
+
+    10.2 ngx_http_connection_t
+    @file: ~/src/http/ngx_http_request.h
+    @role: http的连接对象, 被ngx_connection_t->data索引
+
+    typedef struct {
+        ngx_http_addr_conf_t *addr_conf;
+        ngx_http_conf_ctx_t  *conf_ctx;
+                                对应当前连接选中的服务器的配置环境
+
+        ngx_buf_t  **busy;
+        ngx_int_t  nbusy;
+
+        ngx_buf_t  **free;
+        ngx_int_t  nfree;
+
+        unsigned   proxy_protocol:1;
+    } ngx_http_connection_t;
+
+
+
+
+
+
+
+
+

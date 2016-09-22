@@ -1,0 +1,92 @@
+如果nginx以反向代理的方式运行，那么对实际请求的处理需要转发到后端服务器
+进行，如果后端服务器有多台，如何选择一台合适的后端服务器处理当前请求，
+即通常所说的负载均衡。
+
+nginx提供较多的负载均衡策略，包括轮询、加权轮询、IP哈希、fair、一致哈希
+等，后续nginx_lb_xxx.brief将逐一展开介绍。希望借此能够了解更多的负载均衡
+调度算法。
+
+nginx_lb_rr.brief:          介绍轮询、加权轮询
+nginx_lb_ip_hash.brief:     介绍ip哈希
+nginx_lb_fair.brief:        介绍第三方模块儿, 公平分配
+nginx_lb_keepalive.brief:   介绍凌驾于负载均衡之上的长连接模块儿
+nginx_lb_hash.brief:        介绍基于变量的hash和一致性hash
+nginx_lb_least_conn.brief:  介绍最少连接
+
+main()
+    --ngx_init_cycle()
+        --...
+        --ngx_conf_parse()
+            --ngx_conf_handler()
+                --ngx_command_t->set()
+                    --解析http{}, ngx_http_block()
+                        --解析http{upstream{}}, ngx_http_upstream()
+                            --解析http{upstream{ip_hash;}},
+                                ngx_http_upstream_ip_hash()
+                        --解析完毕后，调用NGX_HTTP_MODULE模块儿的默认值设置
+                          ngx_modules[]->ctx->init_main_conf()
+                            --对于ngx_http_upstream_module模块儿，调用
+                              ngx_http_upstream_init_main_conf()
+                                --初始化upstream环境
+                                  ngx_http_upstream_main_conf_t->upsteams[]
+                                  ->peer.init_upstream(), 如
+                                    ngx_http_upstream_init_ip_hash()
+        --...
+        --ngx_modules[]->init_module()  初始化模块儿
+
+第一阶段
+    解析配置文件的upstream策略
+        upstream{ip_hash;...}
+    调用对应的配置解析函数
+        ngx_http_upstream_ip_hash()
+    注册负载均衡的环境初始化函数
+        ngx_http_upstream_srv_conf_t->peer.init_upstream()
+            = ngx_http_upstream_init_ip_hash()
+
+
+第二阶段
+    当http配置解析完毕后，调用各个http模块儿对应的初始化函数，对于模块儿
+    ngx_http_upstream_module而言，对应main配置初始化函数为
+        ngx_http_upstream_init_main_conf()
+            --ngx_http_upstream_srv_conf_t->peer.init_upstream()
+            -->ngx_http_upstream_init_ip_hash()
+    完成负载均衡环境的初始化
+
+
+第三阶段
+    每次客户端请求到来后, 通过upstream模块儿选择请求location对应的负载
+    策略, 并初始化LB策略环境
+    ngx_http_wait_request_handler()
+        --ngx_http_process_request_headers()
+            --ngx_http_core_run_phases()
+                --ngx_http_core_find_config_phase()
+                                                选择location处理环境, 此时
+                                                    确定了对应的upstream配
+                                                    置, 从而间接确定了LB策
+                                                    略
+                --ngx_http_proxy_handler()      proxy_pass处理入口
+                    --ngx_http_read_client_request_body()
+                        --ngx_http_upstream_init()
+                            --ngx_http_upstream_init_request()
+                                --ngx_http_upstream_conf_t->upstream->
+                                    peer.init()     初始化LB策略的环境
+                                -->ngx_http_upstream_init_ip_hash_peer()
+        
+第四阶段
+    发送请求前, 基于具体的LB策略选择合适的后端服务器
+    ngx_http_proxy_handler()      proxy_pass处理入口
+        --ngx_http_read_client_request_body()
+            --ngx_http_upstream_init()
+                --ngx_http_upstream_init_request()
+                    --ngx_http_upstream_conf_t->upstream->peer.init()     
+                    -->ngx_http_upstream_init_ip_hash_peer()
+                                    初始化LB策略的环境
+                    --ngx_http_upstream_connect()
+                        --ngx_event_connect_peer()
+                            --ngx_peer_connection_t->get()
+                            -->ngx_http_upstream_get_ip_hash_peer()
+                                    获取合适的后端服务器
+                            --connect()
+                                    建立连接
+                    --ngx_http_upstream_send_request()
+                                    发送请求

@@ -1,0 +1,161 @@
+本文档摘录nginx cycle处理流程，备忘
+
+nginx有三种启动模式，
+    1)启动新的nginx
+    2)reload配置
+    3)热替换nginx代码
+cycle就是周期的意思，对应一次启动过程。也就是说，不论发生了以上三种启
+动方式的哪一种，nginx都会创建一个新的cycle与这次启动对应。
+
+<NOTE>
+    1. "****conf_ctx"参考<nginx -- 图解Nginx中的4级指针>
+                         <Nginx的http配置结构体的组织结构>
+                         <nginx配置初始化过程>
+
+
+1. ngx_init_cycle
+10.全局数据结构
+    ---ngx_cycle
+    ---ngx_old_cycles
+
+
+1. ngx_init_cycle()
+    @file: ~/src/core/ngx_cycle.c
+    @role: 解析并加载配置
+    @note: 
+        1) 利用xxx标识ngx_cycle_t
+        2) 只创建NGX_CORE_MODULE等必须模块儿的配置环境, 以达到按需
+            分配节省内存的目的
+
+    --ngx_timezone_update()         更新时区
+    --ngx_timeofday()               提取ngx_cached_time
+    --ngx_time_update()             强制更新缓存时间, refer <_time.brief>
+    --ngx_create_pool()             创建pool，大小 16*1024
+    --ngx_pcalloc()                 在此pool上分配变量ngx_cycle_t
+        --初始化xxx->pool/log/old_cycle(参数)
+        --继承老cycle的->conf_prefix/prefix/conf_file/conf_param
+        --初始化xxx->paths/open_files/shared_memory/listening
+    --ngx_queue_init()              初始化xxx->reusable_connections_queue
+    --gethostname()                 初始化xxx->hostname
+    --for()                         遍历ngx_modules[], 类型NGX_CORE_MODULE
+        --ngx_modules[]->create_conf()  创建xxx->conf_ctx[], 创建模块的配置
+                                        信息结构，<nginx_mod_xxx.brief>
+                                        <note>只创建核心模块儿的信息结构,因
+                                            为它们是程序必须的, 其余模块儿
+                                            在配置解析过程中创建, 按需分配,
+                                            以节省内存
+    --ngx_conf_param()              解析-g参数, global configuration directives
+        --ngx_conf_parse()              配置指令，如"pid /var/run/nginx.pid;
+                                        worker_processes `sysctl -n hw.ncpu`;"
+    --ngx_conf_parse()              <Bang!!!>解析配置文件xxx->conf_file, 
+                                        参考 <nginx_conf.brief>
+    --for()                         遍历ngx_modules[], 类型NGX_CORE_MODULE
+        --ngx_modules[]->init_conf()    确定xxx->conf_ctx[], 用户未配置信息
+                                        设置默认值, <nginx_mod_xxx.brief>
+    --ngx_get_conf()
+    --ngx_create_pidfile()          构建PID文件名,ngx_core_conf_t->pid
+    --ngx_test_lockfile()
+    --ngx_create_paths()            创建目录, xxx->paths, 如有必要修正
+        --ngx_create_dir()              其所有者和权限
+        --ngx_file_info()
+        --chown()
+        --chmod()
+    --ngx_log_open_default()
+    --for()                         遍历打开xxx->open_files
+        --ngx_open_file()
+        --fcntl()                       设置FD_CLOEXEC标志
+    --for()                         创建共享内存, xxx->shared_memory
+        --ngx_shm_alloc()
+            --mmap()
+        --ngx_init_zone_pool()
+        --ngx_shm_zone_t->init()
+    --ngx_open_listening_sockets()  处理监听插口，xxx->listening, refer
+                                    <nginx_socket.brief>
+        --ngx_socket()                  创建插口
+        --setsockopt()                  设置SO_REUSEADDR属性
+        --ngx_nonblocking()             设置非阻塞
+        --bind()
+        --listen()
+    --ngx_configure_listening_sockets()
+                                    配置监听插口，xxx->listening, 如收、发
+        --setsockopt()                  缓存、保活、过滤器、延迟接收等
+    --ngx_log_redirect_stderr()     重定向错误输出
+    --for()                         初始化模块儿, refer <nginx_mod.brief>
+        --ngx_modules[]->init_module()  及<nginx_mod_xxx.brief>
+    --清理旧cycle的非必要共享内存
+    --关闭非必要的监听插口
+    --关闭非必要的打开文件
+    --ngx_array_push()              保存旧cycle到数组, ngx_old_cycles
+    --ngx_add_timer()               添加事件ngx_cleaner_event, 清理上述旧数组,
+                                        处理动作ngx_clean_old_cycles(), 
+                                        refer <nginx_event.brief>
+
+10.全局数据结构
+    10.1 ngx_cycle
+    @file: ~/src/core/ngx_cycle.c
+    @role: 记录一次启动的全局信息结构
+
+    volatile ngx_cycle_t  *ngx_cycle;
+    typedef struct ngx_cycle_s       ngx_cycle_t;
+
+    /*defined in ~/src/core/ngx_cycle.h*/
+    struct ngx_cycle_s {
+        void  ****conf_ctx;         各类型模块儿配置信息结构，如
+                                        ngx_core_conf_t等, 索引
+                                        ngx_modules[]->index
+        ngx_pool_t *pool;           对应的全局内存池
+
+        ngx_log_t  *log;            日志描述结构
+        ngx_log_t  new_log;
+
+        ngx_uint_t log_use_stderr;
+
+        ngx_connection_t **files;   用于fdevent解决方案???
+        ngx_connection_t *free_connections; 
+                                    维护空闲连接单链表
+        ngx_uint_t  free_connection_n;
+
+        ngx_queue_t reusable_connections_queue;
+                                    可重用队列, 当ngx_connection_t->reusable
+                                    =1, 则加入此队列; 当进程资源紧张, 没
+                                    有空闲连接可用时, 此队列中的连接将被释放,
+                                        重用; 通过ngx_reusable_connection()
+                                        函数可加入、移出此队列
+        ngx_array_t listening;      维护监听接口套接字; 如果是通过reload
+                                    方式加载, 初始时为继承的老进程的监听
+                                    插口fd数组; 也可以通过环境变量继承已
+                                    打开的插口数组, export NGINX="
+                                    16000:16500:16600;"
+        ngx_array_t paths;
+        ngx_list_t open_files;
+        ngx_list_t shared_memory;
+
+        ngx_uint_t  connection_n;   配置events{}中参数worker_connections
+                                        的值，默认512; =ngx_event_conf_t
+                                        ->connections; 单个worker连接数
+                                        上限
+        ngx_uint_t files_n;         files[]数组的大小
+
+        ngx_connection_t  *connections;      
+                                    初始时分配的连接结构池, connection_n
+        ngx_event_t  *read_events;  连接的读事件, connection_n
+        ngx_event_t  *write_events; 连接的写事件, connection_n
+
+        ngx_cycle_t  *old_cycle;    老的cycle, 以此为模板初始化新cycle结构
+
+        ngx_str_t  conf_file;       配置文件名, -c参数默认NGX_CONF_PATH
+        ngx_str_t  conf_param;      命令行指令，-g参数
+        ngx_str_t  conf_prefix;     配置前缀，-p参数默认值为当前目录
+                                        或NGX_CONF_PREFIX
+        ngx_str_t  prefix;          目录前缀，./configure时指定, 默认值
+                                        为当前目录或NGX_CONF_PREFIX
+                                        或NGX_PREFIX
+        ngx_str_t lock_file;
+        ngx_str_t hostname;         通过gethostname()得到
+    };
+
+    10.2 ngx_old_cycles
+    @file: ~/src/core/ngx_cycle.c
+    @role: 临时保存旧cycle结构体的数组, 由设定的定时器任务删除
+
+    ngx_array_t            ngx_old_cycles;

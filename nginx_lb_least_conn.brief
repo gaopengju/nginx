@@ -1,0 +1,123 @@
+本文档摘录nginx的least connection负载均衡策略，备忘
+
+<NOTE>配置示例
+        upstream backend {
+            least_conn;
+            server 127.0.0.1:8000;
+            server 127.0.0.1:9000;
+        }
+
+
+1. ngx_http_upstream_least_conn
+2. ngx_http_upstream_init_least_conn
+3. ngx_http_upstream_init_least_conn_peer
+4. ngx_http_upstream_get_least_conn_peer
+10.全局数据结构
+    ---ngx_http_upstream_least_conn_module
+    ---ngx_http_upstream_lc_peer_data_t
+
+
+1. ngx_http_upstream_least_conn()
+    @file: ~/src/http/modules/ngx_http_upstream_least_conn_module.c
+    @role: 处理配置选项"least_conn"
+
+    --赋值ngx_http_upstream_srv_conf_t->peer.init_upstream 
+                                        = ngx_http_upstream_init_least_conn
+    --赋值->flags
+
+2. ngx_http_upstream_init_least_conn()
+    @file: ~/src/http/modules/ngx_http_upstream_least_conn_module.c
+    @role: 负载均衡环境初始化
+
+    --ngx_http_upstream_init_round_robin()
+                                        初始化rr环境，refer <_lb_rr.brief>
+    --ngx_pcalloc()                     赋值ngx_http_upstream_least_conn_conf_t
+                                            ->conns, 包括了备用和非备用
+    --赋值ngx_http_upstream_srv_conf_t->peer.init 
+                                        =ngx_http_upstream_init_least_conn_peer
+
+3. ngx_http_upstream_init_least_conn_peer()
+    @file: ~/src/http/modules/ngx_http_upstream_least_conn_module.c
+    @role: 客户端请求时，负载均衡相关初始化，主要是设置处理句柄
+
+    --ngx_palloc()                      分配ngx_http_upstream_lc_peer_data_t
+                                            保存客户请求的临时信息
+        --初始化->conns
+        --初始化->get_rr_peer               ngx_http_upstream_get_round_robin
+                                                _peer
+        --初始化->free_rr_peer              ngx_http_upstream_free_round_robin
+                                                _peer
+    --ngx_http_upstream_init_round_robin_peer()
+                                        初始化rr算法的信息
+    --赋值ngx_http_request_t->upstream->peer.get
+                                        = ngx_http_upstream_get_least_conn_peer
+    --赋值.free                         =ngx_http_upstream_free_least_conn_peer
+
+4. ngx_http_upstream_get_least_conn_peer()
+    @file: ~/src/http/modules/ngx_http_upstream_least_conn_module.c
+    @role: 一轮选择中，选择符合需求的服务器
+
+    --判断服务器是否已经尝试过
+    --是否down
+    --是否在->fail_timeout时间段内超过了max_fails次失败
+    --判断最少连接
+        --如果未配置权重，则相当于查看连接数
+        --如果配置了权重，相当于查看单位权重上的连接数
+    --当最少连接相同时
+        --在这些服务器上采用rr算法
+    --                              找到了服务器
+        --更新->rrp.current
+        --更新->rrp.tried[]
+        --递增->conns[best server]
+    --                              未找到服务器
+        --ngx_http_upstream_get_least_conn_peer()
+                                        在备用服务器列表上查找
+    --                              最终未找到
+        --return NGX_BUSY
+
+10.全局数据结构
+    10.1 ngx_http_upstream_least_conn_module
+    @file: ~/src/http/modules/ngx_http_upstream_least_conn_module.c
+    @role: least connection负载均衡策略模块儿
+
+    ngx_module_t  ngx_http_upstream_least_conn_module = {
+        NGX_MODULE_V1,
+        &ngx_http_upstream_least_conn_module_ctx, /* module context */
+        ngx_http_upstream_least_conn_commands, /* module directives */
+        NGX_HTTP_MODULE,                       /* module type */
+        NULL,                                  /* init master */
+        NULL,                                  /* init module */
+        NULL,                                  /* init process */
+        NULL,                                  /* init thread */
+        NULL,                                  /* exit thread */
+        NULL,                                  /* exit process */
+        NULL,                                  /* exit master */
+        NGX_MODULE_V1_PADDING
+    };
+
+    static ngx_command_t  ngx_http_upstream_least_conn_commands[] = {
+        { ngx_string("least_conn"),
+            NGX_HTTP_UPS_CONF|NGX_CONF_NOARGS,
+            ngx_http_upstream_least_conn,
+            0,
+            0,
+            NULL },
+
+        ngx_null_command
+    };
+
+    10.2 ngx_http_upstream_lc_peer_data_t
+    @file: ~/src/http/modules/ngx_http_upstream_least_conn_module.c
+    @role: 维护请求信息
+
+    typedef struct {
+        ngx_http_upstream_rr_peer_data_t   rrp;
+                                    对应rr算法的信息
+        ngx_uint_t    *conns;       维护每个服务器上的连接数数组, =
+                                    ngx_http_upstream_least_conn_conf_t->conns
+
+        ngx_event_get_peer_pt  get_rr_peer;
+        ngx_event_free_peer_pt free_rr_peer;
+    } ngx_http_upstream_lc_peer_data_t;
+
+

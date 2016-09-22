@@ -1,0 +1,245 @@
+本文档摘录nginx的geo模块儿的实现, 以期了解geo的用途, 为后续更深入
+了解geoip铺垫, 备忘
+
+The ngx_http_geo_module module creates variables with values depending 
+on the client IP address.
+此模块儿依靠客户端IP地址创建变量
+
+Syntax: geo [$address] $variable { ... }
+Default:    —
+Context:    http
+语法 geo [$address] $variable { ... }, 配置环境http
+
+By default, the address is taken from the $remote_addr variable, but it 
+can also be taken from another variable, for example:
+    geo $arg_remote_addr $geo {
+        ...;
+    }
+默认情况下, 地址来自内部变量$remote_addr(即客户端ip), 但也可依赖其他变
+量, 如$arg_remote_addr
+
+The following special parameters are also supported:
+    delete              删除指定的网络
+    default             不能匹配指定地址的默认值
+    include             引用包含地址配置的文件
+    proxy               定义可信地址(代理地址), 如果客户IP匹配到此处设置
+                            的值, 则利用请求头中的->X-Forwarded-For中的
+                            地址
+    proxy_recursive     使能地址迭代搜索
+                            不使能时, X-Forwarded-For中最后一个值被使用
+                            使能时, X-Forwarded-For中the last non-trusted
+                                address被使用(最后一个与所有可信地址都不
+                                匹配的地址来代替原始客户端地址)
+    ranges              以范围形式指定匹配地址
+
+A value of the most specific match is used.
+最佳匹配将被使用, 和配置顺序无关系
+
+<NOTE>
+    1) 文件: ~/src/http/modules/ngx_http_geo_module.c
+    2) X-Forwarded-For: 简称XFF头, 它代表客户端, 也就是HTTP的请求端真实的IP,    
+        只有在通过了HTTP代理或者负载均衡服务器时才会添加该项. 
+
+        一般格式为:
+            X-Forwarded-For: client1, proxy1, proxy2, proxy3
+        其中的值通过一个"逗号+空格"把多个IP地址区分开, 最左边(client1)是最
+        原始客户端的IP地址, 代理服务器每成功收到一个请求,就把请求来源IP地
+        址添加到右边.
+
+        在上面这个例子中, 这个请求成功通过了三台代理服务器: proxy1, proxy2
+        及proxy3
+
+<NOTE>典型配置
+    geo $country {          #普通范例
+        default        ZZ;
+        include        conf/geo.conf;
+        delete         127.0.0.0/16;
+        proxy          192.168.100.0/24;
+        proxy          2001:0db8::/32;
+
+        127.0.0.0/24   US;
+        127.0.0.1/32   RU;
+        10.1.0.0/16    RU;
+        192.168.1.0/24 UK;
+    }
+
+    geo $country {          #使用ranges的范例
+        ranges;
+        default                   ZZ;
+        127.0.0.0-127.0.0.0       US;
+        127.0.0.1-127.0.0.1       RU;
+        127.0.0.1-127.0.0.255     US;
+        10.1.0.0-10.1.255.255     RU;
+        192.168.1.0-192.168.1.255 UK;
+    }
+
+<NOTE>典型案例
+    Nginx的geo模块可以做全局负载均衡, 可以要根据客户端ip访问到不同
+    的server. 比如, 可以将电信的用户访问定向到电信服务器, 网通的用
+    户重定向到网通服务器. 
+
+    这里实现只有移动手机用户才能访问服务器, 首先要收集全部移动网关
+    ip, 文件cmcc.conf
+    211.136.222.90/32 0;
+
+    配置nginx, 文件nginx.conf
+    worker_processes 1;
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        include         mime.types;
+        default_type    application/octet-stream;
+        sendfile        on;
+        keepalive_timeout 65;
+
+        geo $cmccip {
+            default 1;　　　    #未定义ip的值为1
+            include cmcc.conf;  #加载cmcc.conf文件, 这个文件定义移动网关ip
+        }
+
+        server {
+            listen 801;
+            server_name XXXXX;
+            location / {
+                if ($cmccip) {
+                    rewrite ^ http://www.oschina.net;
+                                #未定义ip(即非移动ip)重定向到www.oschina.net
+                }
+
+                root /data/www;
+                index index.wml index.html;
+            }
+        }
+    }
+    
+<NOTE>其他参考
+    1) http://nginx.org/en/docs/http/ngx_http_geo_module.html
+    2) http://deidara.blog.51cto.com/400447/196276/
+    3) https://www.ttlsa.com/nginx/nginx-speed-white-list-configuration/
+    3) 详解Nginx中的geo模块与利用其配置负载均衡的示例.pdf
+    4) geo模块儿应用 - 限速白名单配置.pdf
+
+
+
+
+1. ngx_http_geo_block
+2. ngx_http_geo_cidr_variable
+10.全局数据结构
+    ---ngx_http_geo_ctx_t 
+    ---ngx_http_geo_module
+
+
+
+1. ngx_http_geo_block()
+    @role: "geo"配置指令的解析句柄, 此函数解析$variable的相关数据,
+        并构建变量ngx_http_variable_t, 最终插入ngx_http_core_main_conf_t
+        ->variables_keys; 后续配置信息中引用此变量时, 就会被加载到
+        ngx_http_core_main_conf_t->variables[]数组
+
+    --ngx_palloc()                  分配配置环境ngx_http_geo_ctx_t
+    --ngx_http_add_variable()       将参数$variable加入变量数组,
+                                        ngx_http_core_main_conf_t
+                                        ->variables_keys;
+        --ngx_http_variable_t->get_handler
+                                        = ngx_http_geo_range_variable/
+                                            ngx_http_geo_cidr_variable
+        --ngx_http_variable_t->data     = ngx_http_geo_ctx_t
+    --ngx_conf_parse()              解析geo [$x] $y {}复杂配置 
+        --ngx_http_geo()                初始化ngx_http_geo_ctx_t
+            --处理单个参数的情形
+                --proxy_recursive
+                --ranges
+            --处理include
+                --ngx_http_geo_include()
+            --处理proxy
+                --ngx_http_geo_cidr_value()     获取ip/mask地址配置
+                --ngx_http_geo_add_proxy()      添加到->proxies[]
+            --处理ranges的地址
+                --ngx_http_geo_range()          初始化->u.high
+            --处理普通的地址
+                --ngx_http_geo_cidr()           初始化->u.trees.tree/tree6
+    --赋值->proxies/proxy_recursive
+
+2. ngx_http_geo_cidr_variable()
+    @role: 针对每次请求, 获取变量$variable的值
+    @note: 
+        1) 对于ranges类型的地址, 参考函数ngx_http_geo_range_variable()
+        2) 当变量值不合法时, 利用"255.255.255.255"代替
+
+    --ngx_http_geo_addr()           获取计算变量值的参考
+        --ngx_http_geo_real_addr()      获取真实的客户端IP地址或指定
+                                        的IP变量值
+            --当->index = -1时
+                --直接利用ngx_http_request_t
+                    ->connection->sockaddr
+            --否则, 获取变量的值
+                --ngx_http_get_flushed_variable()
+                --ngx_parse_addr()
+        --                              如果设置了->proxies, 并且
+                                        ngx_http_request_t->headers_in
+                                        .x_forwarded_for不为空, 则利用
+                                        此报文头中的值做参考
+            --ngx_http_get_forwarded_addr()
+                --ngx_http_get_forwarded_addr_internal()
+    --                              如果获取参考值不成功
+        --则利用255.255.255.255
+    --ngx_radix32tree_find()        搜索ngx_http_geo_ctx_t->u.trees
+                                        .tree/tree6, 获取对应的变量值
+                                        ngx_http_variable_value_t, 并
+                                        通过参数返回
+
+10.全局数据结构
+    10.1 ngx_http_geo_ctx_t 
+    @role: geo模块儿的配置环境
+
+    typedef struct {
+        union {
+            ngx_http_geo_trees_t         trees;     普通情形, 利用radix树组织
+            ngx_http_geo_high_ranges_t   high;      当配置了ranges关键字时
+        } u;                        对应配置的地址信息
+
+        ngx_array_t *proxies;           对应关键字proxy, 类型ngx_cidr_t
+        unsigned    proxy_recursive:1;  对应关键字proxy_recursive
+
+        ngx_int_t   index;          指定的可选变量[$address]在
+                                    ngx_http_core_main_conf_t->variables中的
+                                    索引; 如果未指定, 则为-1
+    } ngx_http_geo_ctx_t;
+
+    typedef struct {
+        ngx_http_geo_range_t **low; 对应其他的配置值
+        ngx_http_variable_value_t *default_value;
+                                    对应关键字default
+    } ngx_http_geo_high_ranges_t;
+
+    typedef struct {
+        ngx_radix_tree_t *tree;     对应配置的地址信息, 如果设置了default
+                                    参数, 插入默认地址0/0, 匹配所有
+#if (NGX_HAVE_INET6)                
+        ngx_radix_tree_t *tree6;
+#endif
+    } ngx_http_geo_trees_t;
+
+    10.2 ngx_http_geo_module
+    @role: geoip模块儿
+
+    ngx_module_t  ngx_http_geo_module = {
+        NGX_MODULE_V1,
+        &ngx_http_geo_module_ctx,
+        ngx_http_geo_commands,
+        NGX_HTTP_MODULE,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NGX_MODULE_V1_PADDING
+    };
+
+
+
+

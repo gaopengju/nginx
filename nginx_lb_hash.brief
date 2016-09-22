@@ -1,0 +1,168 @@
+本文档摘录nginx的url hash负载均衡策略，备忘
+
+<NOTE>配置示例
+        upstream backend {
+            hash $cookie_jsessionid;                //普通hash算法
+            //hash $cookie_jsessionid consistent;   //使用一致性hash
+            server 127.0.0.1:8000;
+            server 127.0.0.1:9000;
+        }
+
+
+1. ngx_http_upstream_hash
+2. ngx_http_upstream_init_hash
+3. ngx_http_upstream_init_hash_peer
+4. ngx_http_upstream_get_hash_peer
+5. ngx_http_upstream_init_chash
+6. ngx_http_upstream_init_chash_peer
+7. ngx_http_upstream_get_chash_peer
+10.全局数据结构
+    ---ngx_http_upstream_hash_module
+    ---ngx_http_upstream_hash_srv_conf_t
+
+
+
+1. ngx_http_upstream_hash()
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: url hash配置文件解析处理
+
+    --初始化ngx_http_upstream_srv_conf_t->peer.init_upstream()
+                                    = ngx_http_upstream_init_hash/
+                                        ngx_http_upstream_init_chash
+                                        后者对应一致性hash
+    --初始化->flags
+
+2. ngx_http_upstream_init_hash()
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: 普通hash负载均衡环境初始化
+
+    --ngx_http_upstream_init_round_robin()
+                                    利用rr环境
+    --设置ngx_http_upstream_srv_conf_t->peer.init()
+                                    = ngx_http_upstream_init_hash_peer
+
+3. ngx_http_upstream_init_hash_peer()
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: 客户端请求，普通hash策略初始化
+
+    --ngx_palloc()                  分配ngx_http_upstream_hash_peer_data_t
+                                        后续用xxx标识
+    --ngx_http_upstream_init_round_robin_peer()
+                                    rr策略初始化
+    --赋值ngx_http_request_t->upstream->peer.get
+                                    = ngx_http_upstream_get_hash_peer
+    --ngx_http_complex_value()      获取当前请求的key, xxx->key
+    --赋值xxx->conf
+    --赋值xxx->tries/rehash/hash    = 0
+    --赋值xxx->get_rr_peer          = ngx_http_upstream_get_round_robin_peer
+                                        记录RR算法的操作句柄
+
+4. ngx_http_upstream_get_hash_peer()
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: 获取后端服务器
+    @note: 后续利用xxx标识ngx_http_upstream_hash_peer_data_t
+
+    --如果尝试次数>20或单台后端服务器，降级为RR算法
+    --ngx_crc32_init()              crc32hash算法初始化
+    --ngx_crc32_update()            非首次计算hash时，根据xxx->rehash更新
+    --ngx_crc32_update()                计算xxx->key的hash值
+    --ngx_crc32_final()
+    --更新xxx->rehash++
+    --更新xxx->hash
+    --利用hash值计算xxx->rrp.peers->peer[]索引
+        --非权重，直接对数组元素个数求余
+        --权重，对权重和求余，然后搜索权重对应的索引
+    --判断是否被尝试过?
+    --判断是否down?
+    --判断是否在fail_timeout时间内达到了max_fails
+    --记录结果到xxx->rrp.current
+    --更新占用记录xxx->rrp.tried[]
+
+5. ngx_http_upstream_init_chash()
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: 一致性hash负载均衡环境初始化
+
+    --ngx_http_upstream_init_round_robin()
+                                    利用rr环境
+    --设置ngx_http_upstream_srv_conf_t->peer.init()
+                                    = ngx_http_upstream_init_chash_peer
+    --ngx_palloc()                  申请节点ngx_http_upstream_chash_point_t
+                                        内存，个数 = ->total_weight * 160
+    --一致性hash环境初始化
+    --赋值ngx_http_upstream_hash_srv_conf_t->points
+
+
+6. ngx_http_upstream_init_chash_peer()
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: 客户请求时，一致性hash负载均衡环境操作
+
+    --ngx_http_upstream_init_hash_peer()
+    --赋值ngx_http_request_t->upstream->peer.get
+                                    = ngx_http_upstream_get_chash_peer
+    --ngx_crc32_long()              计算hash值
+    --ngx_http_upstream_find_chash_point()
+                                    计算一致hash的索引, 赋值
+                                    ngx_http_upstream_hash_peer_data_t->hash
+
+7. ngx_http_upstream_get_chash_peer()
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: 一致性hash策略下，获取后端服务器
+
+    --提取hash值获取对应的服务器名
+    --相同名的服务器之间做RR负载均衡
+
+10.全局数据结构
+    10.1 ngx_http_upstream_hash_module
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: hash负载均衡策略模块儿
+
+    ngx_module_t  ngx_http_upstream_hash_module = {
+        NGX_MODULE_V1,
+        &ngx_http_upstream_hash_module_ctx,    /* module context */
+        ngx_http_upstream_hash_commands,       /* module directives */
+        NGX_HTTP_MODULE,                       /* module type */
+        NULL,                                  /* init master */
+        NULL,                                  /* init module */
+        NULL,                                  /* init process */
+        NULL,                                  /* init thread */
+        NULL,                                  /* exit thread */
+        NULL,                                  /* exit process */
+        NULL,                                  /* exit master */
+        NGX_MODULE_V1_PADDING
+    };
+
+    static ngx_command_t  ngx_http_upstream_hash_commands[] = {
+        { ngx_string("hash"),
+            NGX_HTTP_UPS_CONF|NGX_CONF_TAKE12,
+            ngx_http_upstream_hash,     负载均衡策略环境初始化句柄
+            NGX_HTTP_SRV_CONF_OFFSET,
+            0,
+            NULL },
+
+        ngx_null_command
+    };
+
+    10.2 ngx_http_upstream_hash_srv_conf_t
+    @file: ~/src/http/modules/ngx_http_upstream_hash_module.c
+    @role: 一致性hash的信息模块儿配置信息
+
+    typedef struct {
+        ngx_http_complex_value_t            key;        对应的key
+        ngx_http_upstream_chash_points_t   *points;     一致性hash节点
+    } ngx_http_upstream_hash_srv_conf_t;
+
+    typedef struct {
+        ngx_uint_t                      number;     point[]节点数
+        ngx_http_upstream_chash_point_t point[1];   分配的一致性hash节点
+    } ngx_http_upstream_chash_points_t;
+
+    typedef struct {
+        uint32_t    hash;               节点hash值
+        ngx_str_t   *server;            对应的服务器名
+    } ngx_http_upstream_chash_point_t;
+
+
+
+
+
+

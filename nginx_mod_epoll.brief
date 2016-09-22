@@ -1,0 +1,161 @@
+本文档摘录ngx_epoll_module模块儿，此模块儿被选择作为插口读写事件
+的监控模块儿，备忘
+
+<NOTE>
+    1) refer <nginx_mod_event.brief>
+
+1. ngx_epoll_create_conf
+2. ngx_epoll_init_conf
+3. ngx_epoll_init
+4. ngx_epoll_add_event
+5. ngx_epoll_process_events
+6. ngx_epoll_add_connection
+10.全局数据结构
+    ---ngx_epoll_module
+    ---ngx_epoll_conf_t
+    ---event_list
+    ---ngx_io/ngx_os_io
+    ---ngx_event_actions
+
+
+
+1. ngx_epoll_create_conf()
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: 创建模块儿ngx_epoll_module的配置信息结构
+
+    --ngx_palloc()              分配内存ngx_epoll_conf_t
+        --初始化->events/aio_requests
+                                    = NGX_CONF_UNSET
+
+2. ngx_epoll_init_conf()
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: 初始化模块儿ngx_epoll_module的配置信息结构
+
+    --ngx_conf_init_uint_value()
+                                设置->events        = 512
+                                设置->aio_requests  = 32
+3. ngx_epoll_init()
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: 模块儿进程初始化的时候调用
+
+    --epoll_create()            创建epoll文件描述符
+    --ngx_alloc()               分配struct epoll_event结构链表, 赋值
+                                    event_list, 大小为nevents
+    --赋值ngx_io                = ngx_os_io
+    --赋值ngx_event_actions     = ngx_epoll_module_ctx.actions
+    --赋值ngx_event_flags
+
+4. ngx_epoll_add_event()
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: 添加读监控事件
+
+    --epoll_ctl()               对于NGX_READ_EVENT, EPOLLIN
+                                    对于其他, EPOLLOUT
+    --设置ngx_event_t->active   = 1, 表示已经被监控
+
+5. ngx_epoll_process_events()
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: 等待插口的读、写事件，如果有加入对应的队列；这样后续的处理
+            可以在释放锁以后进行，降低了锁的持有时间，提高了效率
+
+    --epoll_wait()              等待监控事件，时长限制为最早的定时器时钟
+    --ngx_time_update()         上述函数返回后，更新缓存时间
+    --for()                     遍历event_list链表，查看就绪的事件
+        --                          读事件就绪
+            --ngx_event_t->ready        = 1
+            --ngx_post_event()          加入队列ngx_posted_accept_events,
+                                        当ngx_event_t->accept = 1时；否则
+                                        加入ngx_posted_events
+        --                          写事件就绪
+            --ngx_event_t->ready        = 1
+            --ngx_post_event()          加入队列ngx_posted_events
+
+6. ngx_epoll_add_connection()
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: 监控链接
+
+    --epoll_ctl(EPOLL_CTL_ADD)  监控新链接
+    --赋值ngx_event_t->active   = 1, 包括ngx_connection_t->read/write
+
+10.全局数据结构
+    10.1 ngx_epoll_module
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: epoll方式的处理模块儿
+
+    ngx_module_t  ngx_epoll_module = {
+        NGX_MODULE_V1,
+        &ngx_epoll_module_ctx,               /* module context */
+        ngx_epoll_commands,                  /* module directives */
+        NGX_EVENT_MODULE,                    /* module type */
+        NULL,                                /* init master */
+        NULL,                                /* init module */
+        NULL,                                /* init process */
+        NULL,                                /* init thread */
+        NULL,                                /* exit thread */
+        NULL,                                /* exit process */
+        NULL,                                /* exit master */
+        NGX_MODULE_V1_PADDING
+    };
+
+    ngx_event_module_t  ngx_epoll_module_ctx = {
+        &epoll_name,
+        ngx_epoll_create_conf,               /* create configuration */
+        ngx_epoll_init_conf,                 /* init configuration */
+
+        {
+            ngx_epoll_add_event,             /* add an event */
+            ngx_epoll_del_event,             /* delete an event */
+            ngx_epoll_add_event,             /* enable an event */
+            ngx_epoll_del_event,             /* disable an event */
+            ngx_epoll_add_connection,        /* add an connection */
+            ngx_epoll_del_connection,        /* delete an connection */
+#if (NGX_HAVE_EVENTFD)
+            ngx_epoll_notify,                /* trigger a notify */
+#else
+            NULL,                            /* trigger a notify */
+#endif
+            ngx_epoll_process_events,        /* process the events */
+            ngx_epoll_init,                  /* init the events */
+            ngx_epoll_done,                  /* done the events */
+        }
+    };
+
+    10.2 ngx_epoll_conf_t
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: 模块儿ngx_epoll_module的配置信息结构
+
+    typedef struct {
+        ngx_uint_t  events;             监听事件结构总数
+        ngx_uint_t  aio_requests;
+    } ngx_epoll_conf_t;
+
+    10.3 event_list
+    @file: ~/src/event/modules/ngx_epoll_module.c
+    @role: 监听结构struct epoll_event数组, 大小为ngx_epoll_conf_t->events
+
+    static struct epoll_event  *event_list;
+
+    10.4 ngx_io/ngx_os_io
+    @file: ~/src/core/ngx_connection.c
+            ~/src/os/unix/ngx_posix_init.c
+    @role: 底层IO函数集合
+
+    ngx_os_io_t  ngx_io;
+
+    ngx_os_io_t ngx_os_io = {
+        ngx_unix_recv,
+        ngx_readv_chain,
+        ngx_udp_unix_recv,
+        ngx_unix_send,
+        ngx_writev_chain,
+        0
+    };
+
+    10.5 ngx_event_actions
+    @file: ~/src/event/ngx_event.c
+    @role: nginx事件的操作集合, 相当于全局回调函数，以支持epoll、select等
+            多种事件处理模式
+
+    ngx_event_actions_t   ngx_event_actions;
+
+

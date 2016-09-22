@@ -1,0 +1,187 @@
+本文档摘录ngx_events_module和ngx_event_core_module的操作，备忘
+
+<NOTE>
+    1) 模块儿的初始化流程，参考<nginx_mod.brief>
+
+1. ngx_events_block
+2. ngx_event_core_init_conf
+3. ngx_event_process_init
+10.全局数据结构
+    ---ngx_events_module
+    ---ngx_event_core_module
+    ---ngx_event_conf_t
+
+
+
+1. ngx_events_block()
+    @file: ~/src/event/ngx_event.c
+    @role: 解析配置文件nginx.conf文件中的events{}配置块儿
+
+    --for()                     排序类型NGX_EVENT_MODULE, 
+                                    ngx_modules[]->ctx_index
+    --ngx_pcalloc()             分配void*指针，赋值给ngx_cycle->conf_ctx[]
+                                    索引为ngx_modules[ngx_events_module]
+                                    ->index
+    --for()                     遍历类型为NGX_EVENT_MODULE的模块儿, 创建
+                                其配置结构
+        --ngx_modules[]->create_conf()
+                                    对于ngx_event_core_module模块儿, 调用
+                                    ngx_event_core_create_conf(), 创建
+                                    ngx_event_conf_t数据结构
+
+                                    对于ngx_epoll_module模块儿，调用
+                                    ngx_epoll_create_conf(), 创建
+                                    ngx_epoll_conf_t数据结构
+    --ngx_conf_parse()          继续解析{}内部配置
+    --for()                     类型为NGX_EVENT_MODULE的模块儿根据配置
+                                    初始化配置
+        --ngx_modules[]->init_conf()
+                                    对于ngx_event_core_module模块儿, 调用
+                                    ngx_event_core_init_conf(), 初始化
+                                    ngx_event_conf_t数据结构
+
+                                    对于ngx_epoll_module模块儿，调用
+                                    ngx_epoll_init_conf(), 初始化 
+                                    ngx_epoll_conf_t数据结构
+
+2. ngx_event_core_init_conf()
+    @file: ~/src/event/ngx_event.c
+    @role: 初始化模块儿ngx_event_core_module的配置信息, 结构
+            ngx_event_conf_t; 初始化对应的事件处理模块儿，此文档
+            关注epoll
+
+    --epoll_create()            创建epoll
+    --赋值ngx_event_conf_t->use 事件处理模块儿为, = ngx_epoll_module
+    --ngx_conf_init_uint_value()初始化ngx_event_conf_t->connections, 默认
+                                    值512; 初始化ngx_cycle->connection_n;
+                                    
+                                    初始化ngx_event_conf_t->use, 为
+                                    ngx_epoll_module->ctx_index
+
+                                    初始化ngx_event_conf_t->name, 为
+                                    ngx_epoll_module->name
+
+                                    初始化->multi_accept    0
+                                    初始化->accept_mutex    1
+                                    初始化->accept_mutex_delay  500
+
+3. ngx_event_process_init()
+    @file: ~/src/event/ngx_event.c
+    @role: ngx_event_core_module模块儿进程初始化, 
+            初始化ngx_cycle->connections[]连接及其对应的读、写事件,
+            读事件的初始化处理函数为ngx_event_accept()
+
+    --ngx_get_conf()            获取ngx_cycle->conf_ctx[], 再此基础上
+                                    获取ngx_event_core_module的配置
+    --ngx_event_get_conf()
+    --                          当worker进程多余一个时
+        --ngx_use_accept_mutex      = 1
+        --ngx_accept_mutex_held     = 0
+        --ngx_accept_mutex_delay    = ngx_event_conf_t->accept_mutex_delay
+    --ngx_queue_init()          初始化事件队列,
+                                    ngx_posted_accept_events
+                                    ngx_posted_events
+    --ngx_event_timer_init()    初始化事件定时器rbtree
+        --ngx_rbtree_init()
+    --for()                     遍历ngx_modules[], 类型NGX_EVENT_MODULE,
+                                    对选择处理事件的模块儿, 调用其初始
+                                    化函数
+        --ngx_modules[].actions.init()
+                                    对于ngx_epoll_module模块儿，是
+                                    ngx_epoll_init(), <_mod_epoll.brief>
+    --ngx_alloc()               分配内存ngx_cycle->connections, 数量
+                                    ngx_cycle->connection_n
+
+                                    分配ngx_cycle->read_events
+                                    分配ngx_cycle->write_events
+                                    并初始化它们的对应关系，每个连接对应
+                                    一个读事件、一个写事件; 因为这三个
+                                    数组结构大小一致，因此对应关系为数组
+                                    索引相同的关联在一起
+    --for()                     遍历ngx_cycle->listening
+        --ngx_get_connection()      获取空闲链接, 并初始化部分值，refer
+                                        <nginx_connect.brief>
+        --设置读事件->handler       = ngx_event_accept()
+
+
+10.全局数据结构
+    10.1 ngx_events_module
+    @file: ~/src/event/ngx_event.c
+    @role: 对应配置文件的events{}区域
+
+    ngx_module_t  ngx_events_module = {
+        NGX_MODULE_V1,
+        &ngx_events_module_ctx,                /* module context */
+        ngx_events_commands,                   /* module directives */
+        NGX_CORE_MODULE,                       /* module type */
+        NULL,                                  /* init master */
+        NULL,                                  /* init module */
+        NULL,                                  /* init process */
+        NULL,                                  /* init thread */
+        NULL,                                  /* exit thread */
+        NULL,                                  /* exit process */
+        NULL,                                  /* exit master */
+        NGX_MODULE_V1_PADDING
+    };
+
+    static ngx_core_module_t  ngx_events_module_ctx = {
+        ngx_string("events"),
+        NULL,
+        ngx_event_init_conf
+    };
+
+    static ngx_command_t  ngx_events_commands[] = {
+        { ngx_string("events"),
+            NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
+            ngx_events_block,       解析配置文件nginx.conf的events{}时
+            0,                      被调用
+            0,
+            NULL 
+        },
+
+        ngx_null_command
+    };
+
+    10.2 ngx_event_core_module
+    @file: ~/src/event/ngx_event.c
+    @role: 对应events{}内部的配置
+
+    ngx_module_t  ngx_event_core_module = {
+        NGX_MODULE_V1,
+        &ngx_event_core_module_ctx,            /* module context */
+        ngx_event_core_commands,               /* module directives */
+        NGX_EVENT_MODULE,                      /* module type */
+        NULL,                                  /* init master */
+        ngx_event_module_init,                 /* init module */
+        ngx_event_process_init,                /* init process */
+        NULL,                                  /* init thread */
+        NULL,                                  /* exit thread */
+        NULL,                                  /* exit process */
+        NULL,                                  /* exit master */
+        NGX_MODULE_V1_PADDING
+    };
+
+    ngx_event_module_t  ngx_event_core_module_ctx = {
+        &event_core_name,
+        ngx_event_core_create_conf,            /* create configuration */
+        ngx_event_core_init_conf,              /* init configuration */
+        { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL }
+    };
+
+    10.3 ngx_event_conf_t
+    @file: ~/src/event/ngx_event.h
+    @role: 事件模块儿ngx_event_core_module的配置
+
+    typedef struct {
+        ngx_uint_t    connections;      events{}中的worker_connections的
+                                            值，默认512
+        ngx_uint_t    use;              对应的事件处理模块儿,
+                                            ngx_modules[]->ctx_index,
+                                            如使用epoll系统时为
+                                            ngx_epoll_module
+        ngx_flag_t    multi_accept;     默认值0
+        ngx_flag_t    accept_mutex;     默认值1
+        ngx_msec_t    accept_mutex_delay;   默认值500
+
+        u_char       *name;             对应事件处理的模块儿名, 如"epoll"
+    } ngx_event_conf_t;

@@ -1,0 +1,150 @@
+本文摘录nginx的ip hash负载均衡算法，备忘
+
+<NOTE>
+    1. 配置示例
+        upstream backend {
+            ip_hash;
+            server 127.0.0.1:8000;
+            server 127.0.0.1:9000;
+        }
+
+<NOTE>优缺点
+    1. 能较好地把同一个客户端的多次请求分配到同一台后端服务器，适用会话
+        保持的需求；
+    2. 由于利用客户端IP进行hash，会导致后端服务器负载不均匀;
+
+1. ngx_http_upstream_ip_hash
+2. ngx_http_upstream_init_ip_hash
+3. ngx_http_upstream_init_ip_hash_peer
+10.全局数据结构
+    ---ngx_http_upstream_ip_hash_module
+    ---ngx_http_upstream_ip_hash_peer_data_t
+
+
+
+1. ngx_http_upstream_ip_hash()
+    @file: ~/src/http/module/ngx_http_upstream_ip_hash_module.c
+    @role: 配置解析的回调函数，处理upstream{ip_hash;}
+
+    --赋值ngx_http_upstream_srv_conf_t->peer.init_upstream
+                                    设置lb环境初始化函数,
+                                    ngx_http_upstream_init_ip_hash()
+    --设置xxx->flags
+
+2. ngx_http_upstream_init_ip_hash()
+    @file: ~/src/http/modules/ngx_http_upstream_ip_hash_module.c
+    @role: ip_hash类型的upstream环境初始化
+
+    --ngx_http_upstream_init_round_robin()
+                                    利用rr的环境，refer <nginx_lb_rr.brief>
+    --设置ngx_http_upstream_srv_conf_t->peer.init 
+                                    ngx_http_upstream_init_ip_hash_peer()
+
+3. ngx_http_upstream_init_ip_hash_peer()
+    @file: ~/src/http/module/ngx_http_upstream_ip_hash_module.c
+    @role: 利用ip hash策略的http后端请求, 每轮选择前初始化; 主要是
+            设置获取后端服务器的回调函数
+
+    --ngx_palloc()                  分配结构
+                                        ngx_http_upstream_ip_hash_peer_data_t
+    --ngx_http_upstream_init_round_robin_peer()
+                                    初始化rr状态结构, refer <_lb_rr.brief>
+    --赋值ngx_http_request_t->upstream->peer.get
+                                    = ngx_http_upstream_get_ip_hash_peer()
+    --初始化ngx_http_upstream_ip_hash_peer_data_t->addr/addrlen
+                                    根据请求报文初始化
+    --初始化->hash/tries            = 89/0
+    --初始化->get_rr_peer           = ngx_http_upstream_get_round_robin_peer
+                                        退化成rr后的获取服务器方法
+4. ngx_http_upstream_get_ip_hash_peer()
+    @file: ~/src/http/module/ngx_http_upstream_ip_hash_module.c
+    @role: 一次选择中，利用ip hash策略选择合适的后端服务器
+    @note: 算法思想
+        1) 初始化时初始化hash种子值
+        2) 重试次数超过20次, 或只有一台服务器, 自动退化为rr算法
+        3) 利用源IP计算hash值
+        4) 选择服务器数组索引
+        5) 如果服务器不满足要求, 则重复2~4
+        6) 刷新hash种子值, 及已尝试服务器位图
+    @note: 选择服务器数组索引
+        计算hash值后，如果未配置服务器权重，则直接利用此hash值对数组大小
+        求余，对应的值即为所求的服务器索引；如果配置了权重，则利用此hash
+        值对权重和求余，然后遍历服务器数组，直到遍历的权重和>=余数(实质
+        上就是hash值在整个权重数组上展开)
+    @note:
+        资源释放函数，同rr算法
+
+    --重试次数超过20次，或只有一台后端服务器
+        --退化为RR算法              refer <nginx_lb_rr.brief>
+        -->ngx_http_upstream_ip_hash_peer_data_t->get_rr_peer()
+        -->ngx_http_upstream_get_round_robin_peer()
+    --计算源IP hash值
+    --                              未配置后端服务器权重
+        --计算索引
+            --hash值%->rrp.peers->number
+    --                              配置了后端服务器权重
+        --计算索引
+            --hash值%->rrp.peers->total_weight
+            --遍历到对应的索引处
+    --检测是否已经尝试过
+    --检查是否down(宕机)
+    --检查是否超过了最大尝试次数
+    --如果未满足要求, 重新计算hash, 重新选择
+    --                              选择到了后端服务器
+        --赋值->rrp.current
+        --更新->rrp.tried[]
+        --刷新->hash
+
+10.全局数据结构
+    10.1 ngx_http_upstream_ip_hash_module
+    @file: ~/src/http/module/ngx_http_upstream_ip_hash_module.c
+    @role: IP HASH模块儿
+
+    ngx_module_t  ngx_http_upstream_ip_hash_module = {
+        NGX_MODULE_V1,
+        &ngx_http_upstream_ip_hash_module_ctx, /* module context */
+        ngx_http_upstream_ip_hash_commands,    /* module directives */
+        NGX_HTTP_MODULE,                       /* module type */
+        NULL,                                  /* init master */
+        NULL,                                  /* init module */
+        NULL,                                  /* init process */
+        NULL,                                  /* init thread */
+        NULL,                                  /* exit thread */
+        NULL,                                  /* exit process */
+        NULL,                                  /* exit master */
+        NGX_MODULE_V1_PADDING
+    };
+
+    static ngx_command_t  ngx_http_upstream_ip_hash_commands[] = {
+        { ngx_string("ip_hash"),
+            NGX_HTTP_UPS_CONF|NGX_CONF_NOARGS,
+            ngx_http_upstream_ip_hash,      处理配置指令ip_hash
+            0,
+            0,
+            NULL },
+
+        ngx_null_command
+    };
+
+    10.2 ngx_http_upstream_ip_hash_peer_data_t
+    @file: ~/src/http/modules/ngx_http_upstream_ip_hash_module.c
+    @role: 用于http请求的ip hash状态维护结构
+
+    typedef struct {
+        ngx_http_upstream_rr_peer_data_t   rrp;
+                                        rr状态结构
+        ngx_uint_t   hash;              hash种子值, 初始化 = 89
+
+        u_char       addrlen;           addr地址长度
+        u_char       *addr;             请求对应的源IP地址
+
+        u_char       tries;             重试次数
+
+        ngx_event_get_peer_pt get_rr_peer;
+                                        IP_HASH算法失效后，利用rr算法
+                                            获取对应的服务器
+    } ngx_http_upstream_ip_hash_peer_data_t;
+
+
+
+

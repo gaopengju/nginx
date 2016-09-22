@@ -1,0 +1,117 @@
+本文档摘录nginx的connection相关操作, 它主要维护客户端请求, 以期解耦
+理解nginx的插口管理, 备忘
+
+1. ngx_get_connection
+10.全局数据结构
+    ---ngx_connection_t
+
+1. ngx_get_connection()
+    @file: ~/src/core/ngx_connection.c
+    @role: 获取空闲链接, 并初始化部分值
+
+    --从ngx_cycle->free_connections获取空闲的ngx_connection_t结构
+    --初始化
+        --xxx->fd                   对应的插口描述符
+        --xxx->instance             原值取反, =0(初始化时为1)
+
+10.全局数据结构
+    10.1 ngx_connection_t
+    @file: ~/src/core/ngx_connection.h
+    @role: 维护插口链接的结构体
+
+    typedef struct ngx_connection_s  ngx_connection_t;
+
+    struct ngx_connection_s {
+        void *data;         空闲时,
+                                作为单链表指针的next;
+                            建立链接后,
+                                指向具体协议, ngx_http_connection_t;
+                            接收到数据后,
+                                指向请求, ngx_http_request_t;
+        ngx_event_t  *read; 对应ngx_cycle->read_events[]
+        ngx_event_t *write; 对应ngx_cycle->write_events[]
+                                它们的索引和在ngx_cycle->connections[]
+                                中的索引一致, 初始化时建立的对应关系
+        ngx_socket_t fd;    插口描述符
+
+        ngx_recv_pt  recv;  对应的接收/发送函数
+        ngx_send_pt  send;
+        ngx_recv_chain_pt   recv_chain;
+        ngx_send_chain_pt   send_chain;
+                                分别设置为ngx_recv/ngx_send
+                                ngx_recv_chain/ngx_send_chain
+                                refer <nginx_event.brief>
+
+        ngx_listening_t  *listening;      
+                            对应ngx_cycle->listening[]
+
+        off_t sent;
+
+        ngx_log_t *log;
+
+        ngx_pool_t *pool;
+
+        struct sockaddr    *sockaddr;
+        socklen_t  socklen;
+        ngx_str_t  addr_text;
+
+        ngx_str_t  proxy_protocol_addr;
+
+#if (NGX_SSL)
+        ngx_ssl_connection_t  *ssl;
+#endif
+
+        struct sockaddr *local_sockaddr;
+        socklen_t  local_socklen;       本连接绑定的本机地址
+
+        ngx_buf_t  *buffer;             报文缓存
+
+        ngx_queue_t queue;
+
+        ngx_atomic_uint_t   number;
+
+        ngx_uint_t  requests;
+
+        unsigned    buffered:8;
+
+        unsigned    log_error:3;     /* ngx_connection_log_error_e */
+
+        unsigned    unexpected_eof:1;
+        unsigned    timedout:1;         链接超时标志
+        unsigned    error:1;
+        unsigned    destroyed:1;
+
+        unsigned  idle:1;
+        unsigned  reusable:1;           是否可重用? 设置了此标志, 此链接被
+                                            放置到特定队列, 如果此时请求过
+                                            多, 没有可用的空闲连接, 则释放
+                                            打上此标记的连接, 达到重用的目
+                                            的; 此处特定队列指ngx_cycle->
+                                            reusable_connections_queue
+        unsigned  close:1;              链接断开标志
+
+        unsigned  sendfile:1;
+        unsigned  sndlowat:1;
+        unsigned  tcp_nodelay:2;   /* ngx_connection_tcp_nodelay_e */
+        unsigned  tcp_nopush:2;    /* ngx_connection_tcp_nopush_e */
+
+        unsigned  need_last_buf:1;
+
+#if (NGX_HAVE_IOCP)
+        unsigned  accept_context_updated:1;
+#endif
+
+#if (NGX_HAVE_AIO_SENDFILE)
+        unsigned  busy_count:2;
+#endif
+
+#if (NGX_THREADS)
+        ngx_thread_task_t  *sendfile_task;
+#endif
+    };
+
+
+
+
+
+

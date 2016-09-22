@@ -1,0 +1,174 @@
+本文档摘录nginx第三方模块儿ngx_http_geoip2_module, 支持geoip2, 备忘
+
+<NOTE>
+    1) 文件: ~/src/http/modules/ngx_http_geoip2_module.c
+    2) https://github.com/leev/ngx_http_geoip2_module
+    3) http://dev.maxmind.com/geoip/geoip2/downloadable/
+
+<NOTE>典型配置
+    http {
+        ...
+        geoip2 /path/to/maxmind-country.mmdb {  #第一个参数指定数据库路径
+            $geoip2_data_country_code default=US country iso_code;
+            $geoip2_data_country_name country names en;
+        }
+
+        geoip2 /path/to/maxmind-city.mmdb {
+            geoip2_proxy 1.1.1.1/16;
+            geoip2_proxy_recursive on/off;
+            $geoip2_data_city_name default=London city names en;
+        }
+        ....
+
+        fastcgi_param COUNTRY_CODE $geoip2_data_country_code;
+        fastcgi_param COUNTRY_NAME $geoip2_data_country_name;
+        fastcgi_param CITY_NAME    $geoip2_data_city_name;
+        ....
+    }
+
+<NOTE>典型返回结果
+    {
+        "country": 
+        {
+            "geoname_id": 
+                6252001 <uint32>
+            "iso_code": 
+                "US" <utf8_string>
+            "names": 
+            {
+                "de": 
+                    "USA"<utf8_string>
+                "en": 
+                    "United States" <utf8_string>
+            }
+        }
+    }
+
+
+
+1. ngx_http_geoip2
+2. ngx_http_geoip2_variable
+10.全局数据结构
+    ---ngx_http_geoip2_conf_t
+    ---ngx_http_geoip2_db_t
+    ---ngx_http_geoip2_ctx_t
+    ---ngx_http_geoip2_module
+
+
+1. ngx_http_geoip2()
+    @role: 解析关键字"geoip2"
+
+    --ngx_array_create()
+    --ngx_array_push()              分配ngx_http_geoip2_db_t, 填充数组
+                                        ngx_http_geoip2_conf_t->databases
+    --MMDB_open()                   打开数据库(第一个参数), 赋值xxx->mmdb
+    --ngx_conf_parse()              继续解析对应的块结构, 构建geoip2模块儿
+                                    对应的变量
+        --ngx_http_geoip2_add_variable()
+            --ngx_pcalloc()             分配ngx_http_geoip2_ctx_t数据结构
+                --->databse                 并初始化
+                --->lookup[][]
+            --ngx_http_add_variable()   添加变量到ngx_http_core_main_conf_t
+                                            ->variables_keys
+            --                          初始化变量ngx_http_variable_t
+                --->data                    = ngx_http_geoip2_ctx_t
+                                                获取变量值需要的辅助结构
+                --->get_handler             = ngx_http_geoip2_variable
+                                                变量存取函数
+
+2. ngx_http_geoip2_variable()
+    @role: 客户请求过程中, 获取变量值的函数
+
+    -----------------获取待查询用的IP地址--------------------
+    --                              默认使用客户端地址
+        --ngx_http_request_t->connection->sockaddr
+    --                              存在x_forwarded_for头, 且配置了proxy,
+                                        利用此头中的IP地址
+        --ngx_http_get_forwarded_addr()
+
+    -----------------查询IP地址对应的信息--------------------
+    --MMDB_lookup_sockaddr()        查找, 结果存放在ngx_http_geoip2_db_t
+                                        ->result中
+    --MMDB_aget_value()             获取对应的值
+    --根据类型赋值到变量值中
+    --如果未找到则利用
+        ngx_http_geoip2_ctx_t->default的值
+
+10.全局数据结构
+    10.1 ngx_http_geoip2_conf_t
+    @role: 本模块儿的信息配置结构
+
+    typedef struct {
+        ngx_array_t *databases;         配置的数据库信息, ngx_http_geoip2_db_t
+        ngx_array_t *proxies;           可信任地址, 对应关键字geoip2_proxy
+        ngx_flag_t  proxy_recursive;    是否迭代查询, 默认值0, 对应关键字
+                                        geoip2_proxy_recursive
+                                            此两值参考<nginx_mod_geoip.brief>
+    } ngx_http_geoip2_conf_t;
+
+    10.2 ngx_http_geoip2_db_t
+    @role: geoip2数据库信息
+
+    typedef struct {
+        MMDB_s mmdb;                    数据库操作句柄, 由MMDB_open()返回
+        MMDB_lookup_result_s result;    当前查询的返回结果, 由
+                                            MMDB_lookup_sockaddr()返回
+#if (NGX_HAVE_INET6)
+        uint8_t address[16];
+#else
+        unsigned long address;          为了加速? 缓存上次查询的地址
+#endif
+    } ngx_http_geoip2_db_t;
+
+    10.3 ngx_http_geoip2_ctx_t
+    @role: 变量对应的数据ngx_http_variable_t->data
+
+    typedef struct {
+        ngx_http_geoip2_db_t *database; 所在的数据库
+        const char **lookup;            搜索路径, 即结果关键字的路径; 对应
+                                            配置实例的变量
+                                            $geoip2_data_country_name, 此处
+                                            的值为"country"/"names"/"en"组
+                                            成的数组
+        ngx_str_t  default_value;       对应配置关键字"default=xxx"
+    } ngx_http_geoip2_ctx_t;
+
+    10.4 ngx_http_geoip2_module
+    @role: nginx第三方模块儿, 以支持geoip2
+
+    ngx_module_t  ngx_http_geoip2_module = {
+        NGX_MODULE_V1,
+        &ngx_http_geoip2_module_ctx,
+        ngx_http_geoip2_commands,
+        NGX_HTTP_MODULE,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NGX_MODULE_V1_PADDING
+    };
+
+    static ngx_http_module_t  ngx_http_geoip2_module_ctx = {
+        NULL,
+        NULL,
+
+        ngx_http_geoip2_create_conf,
+        ngx_http_geoip2_init_conf,
+                                分配ngx_http_geoip2_conf_t结构, 并
+                                初始化
+        NULL,
+        NULL,
+
+        NULL,
+        NULL
+    };
+
+
+
+
+
+
+

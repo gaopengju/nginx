@@ -1,0 +1,191 @@
+本文档摘录nginx的事件处理主循环, 在此处集结各事件处理句柄, 以期串联
+各模块儿, 备忘
+
+
+1. ngx_event_process_posted
+2. ngx_event_accept
+10.全局数据结构
+    ---ngx_posted_accept_events/ngx_posted_events
+    ---ngx_event_t
+
+
+1. ngx_event_process_posted()
+    @file: ~/src/event/ngx_event_posted.c
+    @role: 处理ngx_posted_accept_events/ngx_posted_events队列的事件
+
+    --while()                   遍历直到队列为空, 调用其处理函数
+        --ngx_queue_head()
+        --ngx_queue_data()
+        --ngx_delete_posted_event()
+        --ngx_event_t->handler()    调用对应的事件处理句柄,
+                                    ACCEPT事件, 
+                                        调用ngx_event_accept();
+                                    普通事件, 调用
+                                        ngx_http_wait_request_handler(),
+                                        进入http的处理流程, 
+                                        refer <nginx_http_request.brief>
+2. ngx_event_accept()
+    @file: ~/src/event/ngx_event_accept.c
+    @role: 处理ACCEPT事件
+    @note: 接收客户端连接, 分配结构体ngx_connection_t记录其信息,
+            并设置处理句柄, ngx_connection_t->fd加入epoll的监控队列
+
+    --赋值ngx_event_t->ready    = 0
+    --accept()                  接收请求
+    --计算ngx_accept_disabled   计算参数, 用于重负荷时放弃接收链接请求
+                                    = ngx_cycle->connection_n/8
+                                        - ngx_cycle->free_connection_n
+                                    可见, 当空闲连接少于1/8时, 倾向于不
+                                    接受新链接请求
+    --ngx_get_connection()      获取空闲连接结构, <nginx_connect.brief>
+    --ngx_create_pool()         创建此链接的内存池
+    --ngx_palloc()
+    --ngx_memcpy()              存储ngx_connection_t->sockaddr, 对端地址
+    --ngx_blocking()            设置非阻塞模式
+    --                          设置ngx_connection_t的收发函数
+                                    ->recv = ngx_recv
+                                    ->send = ngx_send
+                                    ->recv_chain = ngx_recv_chain
+                                    ->send_chain = ngx_send_chain
+    --                          关联到引发事件的ngx_listening_t结构
+        --赋值->listening
+    --ngx_add_conn()            添加链接到监控系统, <_mod_epoll.brief>
+        --ngx_event_actions.add_conn()  监控->fd的读写事件
+        -->ngx_epoll_add_connection() 
+    --ngx_listening_t->handler()
+    -->ngx_http_init_connection()
+                                在解析http{}时被赋值, 设置后续读写事件的
+                                操作句柄, 并重新利用epoll启动监控,
+                                refer <_mod_http.brief>
+        --设置ngx_event_t->handler  读事件 = ngx_http_wait_request_handler
+                                    写事件 = ngx_http_empty_handler
+                                    refer <_http_request.brief>
+
+10.全局数据结构
+    10.1 ngx_posted_accept_events/ngx_posted_events
+    @file: ~/src/event/ngx_event_posted.c
+    @role: 插口事件队列; 
+            持有锁的时候, 把事件添加到队列; 
+            释放锁后, 再处理, 以加速;
+            当然, ACCEPT事件(即ngx_posted_accept_events)是持有锁时处理的,
+            因为它是内核级别的, 为所有的进程共享, 需要锁机制避免"惊群"
+
+    ngx_queue_t  ngx_posted_accept_events;
+    ngx_queue_t  ngx_posted_events;
+
+    10.2 ngx_event_t
+    @file: ~/src/event/ngx_event.h
+    @role: nginx的连接ngx_connection_t对应的事件结构
+
+    typedef struct ngx_event_s       ngx_event_t;
+
+    struct ngx_event_s {
+        void  *data;            指向事件对应的连接, ngx_connection_t
+        unsigned  write:1;      读or写事件?
+        unsigned  accept:1;     等待accept()事件? 初始化连接时置1
+
+        unsigned instance:1;    初始值为1, 用于发现过期的event
+
+        /*
+         * the event was passed or would be passed to a kernel;
+         * in aio mode - operation was posted.
+         */
+        unsigned  active:1;     是否激活事件处理
+                                    被加入epoll前赋值
+        unsigned  disabled:1;
+
+        unsigned  ready:1;      读/写是否就绪
+                                    epoll监控到对应事件后赋值
+                                    处理完事件后清零
+        unsigned  oneshot:1;
+
+        /* aio operation is complete */
+        unsigned  complete:1;
+
+        unsigned  eof:1;
+        unsigned  error:1;
+
+        unsigned  timedout:1;   客户端请求是否超时?
+        unsigned  timer_set:1;  是否设置了定时器(已经加入红黑树)?
+
+        unsigned  delayed:1;
+
+        unsigned  deferred_accept:1;
+
+        /* the pending eof reported by kqueue, epoll or 
+           in aio chain operation */
+        unsigned  pending_eof:1;
+
+        unsigned  posted:1;
+
+#if (NGX_WIN32)
+        /* setsockopt(SO_UPDATE_ACCEPT_CONTEXT) was successful */
+        unsigned  accept_context_updated:1;
+#endif
+
+#if (NGX_HAVE_KQUEUE)
+        unsigned  kq_vnode:1;
+
+        /* the pending errno reported by kqueue */
+        int       kq_errno;
+#endif
+
+        /*
+         * kqueue only:
+         *   accept:     number of sockets that wait to be accepted
+         *   read:       bytes to read when event is ready
+         *               or lowat when event is set with NGX_LOWAT_EVENT flag
+         *   write:      available space in buffer when event is ready
+         *               or lowat when event is set with NGX_LOWAT_EVENT flag
+         *
+         * iocp: TODO
+         *
+         * otherwise:
+         *   accept:     1 if accept many, 0 otherwise
+         */
+
+#if (NGX_HAVE_KQUEUE) || (NGX_HAVE_IOCP)
+        int       available;
+#else
+        unsigned  available:1;
+#endif
+
+        ngx_event_handler_pt  handler;      
+                                在初始化时, 接收事件的处理函数
+                                    ngx_event_accept(); 
+                                ACCEPT事件后, 读/写事件为
+                                    ngx_http_wait_request_handler(),
+                                    ngx_http_empty_handler();
+                                接收到报文请求头后, 读/写事件为
+                                    ngx_http_process_request_line()
+#if (NGX_HAVE_AIO)
+
+#if (NGX_HAVE_IOCP)
+        ngx_event_ovlp_t ovlp;
+#else
+        struct aiocb     aiocb;
+#endif
+
+#endif
+
+        ngx_uint_t index;
+
+        ngx_log_t  *log;
+
+        ngx_rbtree_node_t   timer;
+
+        /* the posted queue */
+        ngx_queue_t queue;
+
+        unsigned closed:1;      是否处于关闭状态
+
+        /* to test on worker exit */
+        unsigned  channel:1;
+        unsigned  resolver:1;
+
+        unsigned  cancelable:1;
+    };
+
+
+
+

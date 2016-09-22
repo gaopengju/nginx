@@ -1,0 +1,92 @@
+本文档摘录ngx_http_static_module模块儿, 此模块儿是nginx提供的处理
+客户静态请求的最简单模块儿; 通过了解此模块儿的初始化、处理等流程,
+期望从整体上了解nginx对客户请求的处理流程、filter模块儿的执行插入
+点等, 为后续自己按需求构造新模块儿夯实基础.
+
+<NOTE>
+    1) 文件：~/src/http/modules/ngx_http_static_module.c
+
+1. ngx_http_static_init
+2. ngx_http_static_handler
+10.全局数据结构
+    ---ngx_http_static_module
+
+
+1. ngx_http_static_init()
+    @role: 注册phase[]阶段的处理句柄
+
+    --ngx_array_push()              在ngx_http_core_main_conf_t->phases[]
+                                    的NGX_HTTP_CONTENT_PHASE阶段注册处理
+                                    句柄
+    --句柄为ngx_http_static_handler
+
+2. ngx_http_static_handler()
+    @role: static模块儿对请求的处理句柄
+
+    --仅处理NGX_HTTP_GET/_HEAD/_POST
+    --不处理目录, 即ngx_http_request_t->uri不能以"/"结尾
+    --ngx_http_map_uri_to_path()    请求映射为具体的文件名
+    --ngx_open_cached_file()        缓存相关
+    --不支持NGX_HTTP_POST
+    --ngx_http_discard_request_body()
+                                    主动丢弃客户端的请求体(因为此业务不关
+                                        心请求体)
+    --                              根据文件属性设置部分响应头信息
+        --ngx_http_request_t->headers_out.status
+        --->headers_out.content_length_n
+        --->headers_out.last_modified_time
+    --ngx_http_set_etag()           形成"ETag"
+    --ngx_http_set_content_type()
+                                    构造返回信息
+    --ngx_http_send_header()        发送响应头, 此处开启了头部的filter处理
+        --ngx_http_top_header_filter()
+            -->ngx_http_header_filter() 一般最后调用此filter, 由
+                                        ngx_http_header_filter_module模块
+                                        注册
+                --头部处理
+                --ngx_http_write_filter()   发送
+    --ngx_http_output_filter()      发送响应体, 此处开了body的filter处理
+        --ngx_http_top_body_filter()
+            -->ngx_http_write_filter()  一般最后调用此filter, 由
+                                        ngx_http_write_filter_module模块儿
+                                        注册
+                --ngx_connection_t->send_chain()
+                -->ngx_send_chain()
+                -->ngx_io.send_chain()
+                -->ngx_os_io.send_chain()
+                -->ngx_writev_chain()
+                -->ngx_writev()             发送
+                                    
+
+10.全局数据结构
+    10.1 ngx_http_static_module
+    @role: 静态请求处理模块儿
+
+    ngx_module_t  ngx_http_static_module = {
+        NGX_MODULE_V1,
+        &ngx_http_static_module_ctx,
+        NULL,
+        NGX_HTTP_MODULE,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NGX_MODULE_V1_PADDING
+    };
+    ngx_http_module_t  ngx_http_static_module_ctx = {
+        NULL,
+        ngx_http_static_init,   注册phase[]对应的handler处理函数
+
+        NULL,
+        NULL,
+
+        NULL,
+        NULL,
+
+        NULL,
+        NULL
+    };
+

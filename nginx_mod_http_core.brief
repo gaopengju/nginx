@@ -1,0 +1,402 @@
+本文档摘录ngx_http_core_module模块儿操作，备忘
+
+<NOTE>
+    1) file: ~/src/http/ngx_http_core_module.c
+
+1. ngx_http_core_server
+2. ngx_http_core_listen
+3. ngx_http_core_server_name
+4. ngx_http_core_location
+10.全局数据结构
+    ---ngx_http_core_module
+    ---ngx_http_core_main_conf_t
+    ---ngx_http_core_srv_conf_t 
+    ---ngx_http_core_loc_conf_t
+    ---ngx_http_core_variables[]
+    ---ngx_http_headers_in[]
+
+
+1. ngx_http_core_server()
+    @role: 解析http{server{}}中的server关键字
+
+    --ngx_pcalloc()                 分配ngx_http_conf_ctx_t结构及
+                                        对应的二维指针数组
+    --for()                         遍历ngx_modules[], NGX_HTTP_MODULE
+        --->create_srv_conf()           创建对应的配置信息结构
+        --->create_loc_conf()
+    --初始化结构指针, 融入整体配置结构图
+    --ngx_array_push()              在ngx_http_core_main_conf_t->servers[]
+                                        分配空间, 类型ngx_http_core_srv_conf_t
+    --ngx_conf_parse()              解析server{}内容块儿
+    --                              没有配置监听端口(无"listen 80;"语句)
+        --ngx_http_add_listen()         则添加"ANY:80"到
+                                        ngx_http_core_main_conf_t->ports[]
+            --ngx_http_add_addresses()  此数据结构port  -->addr1 --> server1
+                --ngx_http_add_server()                          --> server2
+                                                        -->addr2 --> server3
+                                        初始化后的结构组织图, 参考
+                                        图9-1 p184《深入剖析nginx》
+
+2. ngx_http_core_listen()
+    @role: 解析http{server{listen xxx;}}中的listen关键字
+
+    --设置ngx_http_core_srv_conf_t->listen
+                                    = 1, 表示配置了监听口
+    --ngx_parse_url()               解析配置地址+port
+    --for()                         解析其他参数, 如default_server等
+    --ngx_http_add_listen()         添加到ngx_http_core_main_conf_t->ports[]
+
+3. ngx_http_core_server_name()
+    @role: 解析http{server{server_name xxx;}}中的server_name关键字
+
+    --ngx_array_push()              ngx_http_core_srv_conf_t->server_names[]
+                                        类型ngx_http_server_name_t
+    --初始化其->name/->server
+
+
+10.全局数据结构
+    10.1 ngx_http_core_module
+    @file: ~/src/http/ngx_http_core_module.c
+    @role: HTTP的核心模块儿, 主要维护配置信息
+
+    ngx_module_t  ngx_http_core_module = {
+        NGX_MODULE_V1,
+        &ngx_http_core_module_ctx,             /* module context */
+        ngx_http_core_commands,                /* module directives */
+        NGX_HTTP_MODULE,                       /* module type */
+        NULL,                                  /* init master */
+        NULL,                                  /* init module */
+        NULL,                                  /* init process */
+        NULL,                                  /* init thread */
+        NULL,                                  /* exit thread */
+        NULL,                                  /* exit process */
+        NULL,                                  /* exit master */
+        NGX_MODULE_V1_PADDING
+    };
+
+    static ngx_http_module_t  ngx_http_core_module_ctx = {
+        ngx_http_core_preconfiguration,
+                                注册内置参数ngx_http_core_variables[]
+                                到ngx_http_core_main_conf_t->variables_keys
+        ngx_http_core_postconfiguration,
+                                注册request body filter钩子,
+                                设置ngx_http_top_request_body_filter
+                                = ngx_http_request_body_save_filter()
+
+        ngx_http_core_create_main_conf,
+        ngx_http_core_init_main_conf, 
+                                创建并初始化ngx_http_core_main_conf_t
+
+        ngx_http_core_create_srv_conf,
+        ngx_http_core_merge_srv_conf,
+                                创建并初始化ngx_http_core_srv_conf_t
+
+        ngx_http_core_create_loc_conf,
+        ngx_http_core_merge_loc_conf 
+                                创建并初始化ngx_http_core_loc_conf_t
+    };
+
+    10.2 ngx_http_core_main_conf_t
+    @file: ~/src/http/ngx_http_core_module.h
+    @role: http的main配置信息结构
+    @note: phases[]注册的回调句柄在函数ngx_http_core_run_phases()被执行时,
+            依照返回值不同, 影响同一阶段的其他句柄执行; 由于先注册的模块
+            其回调反而后执行, 即后进先出, 因此模块儿注册的顺序非常重要; 逻
+            辑上执行顺序靠前的模块儿需要后注册;
+
+    typedef struct {
+        ngx_array_t  servers;   http{}配置下，所有server的集合,
+                                    描述结构ngx_http_core_srv_conf_t
+        ngx_http_phase_engine_t phase_engine;
+                                根据->phases[]生成的最终函数指针列表,
+                                    顺序依然是按照ngx_http_phases的各个阶段
+        ngx_hash_t  headers_in_hash;
+                                各模块儿对http特定头的处理回调
+                                    如, http模块的
+                                        ngx_http_headers_in[]
+                                    upstream模块儿的
+                                        ngx_http_upstream_headers_in[]
+        ngx_hash_t  variables_hash;
+                                由->variables_keys构造的hash数组
+                                    ngx_http_variable_t->index =
+                                    对应其在(variables[])中的数组索引
+        ngx_array_t  variables; 包括: 解析配置文件时，被使用到的变量; 
+                                    及内置在代码中的变量; 
+                                    类型ngx_http_variable_t
+        ngx_uint_t  ncaptures;
+
+        ngx_uint_t  server_names_hash_max_size;
+                                默认值512
+        ngx_uint_t  server_names_hash_bucket_size;
+                                大小为cache line对齐
+
+        ngx_uint_t  variables_hash_max_size;
+                                默认值1024
+        ngx_uint_t  variables_hash_bucket_size;
+                                默认值64, cache line对齐
+
+        ngx_hash_keys_arrays_t    *variables_keys;  
+                                可配置变量的hash数组, 包括
+                                    ngx_http_core_variables[], 其他模块
+                                    儿支持的变量在初始化时也将注册进来;
+                                    解析完毕后, 此内存会被释放, = NULL
+        ngx_array_t  *ports;    由http{server{listen xxx;}}}关键字配置的待
+                                    监听的端口+地址, ngx_http_conf_port_t,
+                                    此结构中一个端口可对应多个地址, 因此
+                                    地址是数组; 每个地址又可以对应多个
+                                    server, 都加入ngx_http_conf_addr_t
+                                    ->servers[], 引入此地址的server作为
+                                    ->default_server
+        ngx_uint_t  try_files;  /* unsigned  try_files:1 */
+
+        ngx_http_phase_t  phases[NGX_HTTP_LOG_PHASE + 1];
+                                各阶段的处理函数指针数组, 由各模块儿
+                                    调用->postconfiguration注册
+    } ngx_http_core_main_conf_t;
+
+    读取完请求头后，nginx进入请求的处理阶段。简单的情况下，客户端发送过
+    的统一资源定位符(url)对应服务器上某一路径上的资源，web服务器需要做
+    的仅仅是将url映射到本地文件系统的路径，然后读取相应文件并返回给客户
+    端。但这仅仅是最初的互联网的需求，而如今互联网出现了各种各样复杂的
+    需求，要求web服务器能够处理诸如安全及权限控制，多媒体内容和动态网页
+    等等问题。这些复杂的需求导致web服务器不再是一个短小的程序，而变成了
+    一个必须经过仔细设计，模块化的系统。nginx良好的模块化特性体现在其对
+    请求处理流程的多阶段划分当中，多阶段处理流程就好像一条流水线，一个
+    nginx进程可以并发的处理处于不同阶段的多个请求。nginx允许开发者在处理
+    流程的任意阶段注册模块，在启动阶段，nginx会把各个阶段注册的所有模块
+    处理函数按序的组织成一条执行链。
+
+    typedef enum {
+        NGX_HTTP_POST_READ_PHASE = 0,
+                                    接收完请求头的第一个阶段
+
+        NGX_HTTP_SERVER_REWRITE_PHASE,
+                                    server级别的重写URI阶段
+        NGX_HTTP_FIND_CONFIG_PHASE, 
+                                    寻找location配置阶段
+                                        1)此阶段不能注册handler
+                                        2)->next = 0
+                                        3)此阶段唯一的处理函数
+                                            ngx_http_core_find_config_phase()
+        NGX_HTTP_REWRITE_PHASE,     location级别的重写URI阶段
+        NGX_HTTP_POST_REWRITE_PHASE,
+                                    location重写的后一阶段, 跳转到合适阶段
+                                        1)此阶段也不能注册handler
+                                        2)如果NGX_HTTP_REWRITE_PHASE定义了
+                                            handler, 其->next指向
+                                            NGX_HTTP_FIND_CONFIG_PHASE
+        NGX_HTTP_PREACCESS_PHASE,   访问控制前，用于限制访问频率、连接数等
+
+        NGX_HTTP_ACCESS_PHASE,      访问权限控制阶段，如黑白名单/用户名等
+        NGX_HTTP_POST_ACCESS_PHASE, 权限控制结果的处理
+                                        此阶段也不能注册handler
+
+        NGX_HTTP_TRY_FILES_PHASE,   try_files指令的处理阶段
+                                        此阶段也不能注册handler
+        NGX_HTTP_CONTENT_PHASE,     内容生成阶段，产生响应
+                                        1) ->checker()函数为
+                                            ngx_http_core_content_phase()
+    
+        NGX_HTTP_LOG_PHASE          日志记录阶段
+    } ngx_http_phases;
+
+    10.3 ngx_http_core_srv_conf_t 
+    @file: ~/src/http/ngx_http_core_module.h
+    @role: http模块儿的server配置信息结构
+
+    typedef struct {
+        ngx_array_t  server_names;  配置http{server{server_name xxx;}}中
+                                        所有服务器名字的合集, 类型
+                                        ngx_http_server_name_t
+        /* server ctx */
+        ngx_http_conf_ctx_t *ctx;
+
+        ngx_str_t  server_name;
+
+        size_t  connection_pool_size;
+        size_t  request_pool_size;
+        size_t  client_header_buffer_size;
+
+        ngx_bufs_t large_client_header_buffers;
+
+        ngx_msec_t client_header_timeout;
+
+        ngx_flag_t ignore_invalid_headers;
+        ngx_flag_t merge_slashes;
+        ngx_flag_t underscores_in_headers;
+
+        unsigned   listen:1;        是否配置了"listen 80;"监听端口
+#if (NGX_PCRE)
+        unsigned   captures:1;
+#endif
+        ngx_http_core_loc_conf_t  **named_locations;
+    } ngx_http_core_srv_conf_t;
+
+    10.4 ngx_http_core_loc_conf_t
+    @file: ~/src/http/ngx_http_core_module.h
+    @role: http模块儿的location配置信息结构
+
+    typedef struct ngx_http_core_loc_conf_s  ngx_http_core_loc_conf_t;
+    struct ngx_http_core_loc_conf_s {
+        ngx_str_t  name;          /* location name */
+
+#if (NGX_PCRE)
+        ngx_http_regex_t  *regex;
+#endif
+
+        unsigned noname:1;   /* "if () {}" block or limit_except */
+        unsigned lmt_excpt:1;
+        unsigned named:1;
+
+        unsigned exact_match:1;
+        unsigned noregex:1;
+
+        unsigned auto_redirect:1;
+#if (NGX_HTTP_GZIP)
+        unsigned gzip_disable_msie6:2;
+#if (NGX_HTTP_DEGRADATION)
+        unsigned gzip_disable_degradation:2;
+#endif
+#endif
+
+        ngx_http_location_tree_node_t   *static_locations;
+#if (NGX_PCRE)
+        ngx_http_core_loc_conf_t       **regex_locations;
+#endif
+
+        /* pointer to the modules' loc_conf */
+        void **loc_conf;
+
+        uint32_t limit_except;
+        void **limit_except_loc_conf;
+
+        ngx_http_handler_pt  handler;
+
+        /* location name length for inclusive location with inherited alias */
+        size_t alias;
+        ngx_str_t root;                    /* root, alias */
+        ngx_str_t post_action;
+
+        ngx_array_t *root_lengths;
+        ngx_array_t *root_values;
+
+        ngx_array_t *types;
+        ngx_hash_t types_hash;
+        ngx_str_t default_type;
+
+        off_t client_max_body_size;    /* client_max_body_size */
+        off_t directio;                /* directio */
+        off_t directio_alignment;      /* directio_alignment */
+
+        size_t client_body_buffer_size; /* client_body_buffer_size */
+        size_t send_lowat;              /* send_lowat */
+        size_t postpone_output;         /* postpone_output */
+        size_t limit_rate;              /* limit_rate */
+        size_t limit_rate_after;        /* limit_rate_after */
+        size_t sendfile_max_chunk;      /* sendfile_max_chunk */
+        size_t read_ahead;              /* read_ahead */
+
+        ngx_msec_t client_body_timeout;     /* client_body_timeout */
+        ngx_msec_t send_timeout;            /* send_timeout */
+        ngx_msec_t keepalive_timeout;       /* keepalive_timeout */
+        ngx_msec_t lingering_time;          /* lingering_time */
+        ngx_msec_t lingering_timeout;       /* lingering_timeout */
+        ngx_msec_t resolver_timeout;        /* resolver_timeout */
+
+        ngx_resolver_t  *resolver;             /* resolver */
+
+        time_t keepalive_header;        /* keepalive_timeout */
+
+        ngx_uint_t keepalive_requests;      /* keepalive_requests */
+        ngx_uint_t keepalive_disable;       /* keepalive_disable */
+        ngx_uint_t satisfy;                 /* satisfy */
+        ngx_uint_t lingering_close;         /* lingering_close */
+        ngx_uint_t if_modified_since;       /* if_modified_since */
+        ngx_uint_t max_ranges;              /* max_ranges */
+        ngx_uint_t client_body_in_file_only; /* client_body_in_file_only */
+
+        ngx_flag_t client_body_in_single_buffer;
+        /* client_body_in_singe_buffer */
+        ngx_flag_t internal;                /* internal */
+        ngx_flag_t sendfile;                /* sendfile */
+        ngx_flag_t aio;                     /* aio */
+        ngx_flag_t tcp_nopush;              /* tcp_nopush */
+        ngx_flag_t tcp_nodelay;             /* tcp_nodelay */
+        ngx_flag_t reset_timedout_connection; /* reset_timedout_connection */
+        ngx_flag_t server_name_in_redirect; /* server_name_in_redirect */
+        ngx_flag_t port_in_redirect;        /* port_in_redirect */
+        ngx_flag_t msie_padding;            /* msie_padding */
+        ngx_flag_t msie_refresh;            /* msie_refresh */
+        ngx_flag_t log_not_found;           /* log_not_found */
+        ngx_flag_t log_subrequest;          /* log_subrequest */
+        ngx_flag_t recursive_error_pages;   /* recursive_error_pages */
+        ngx_flag_t server_tokens;           /* server_tokens */
+        ngx_flag_t chunked_transfer_encoding; /* chunked_transfer_encoding */
+        ngx_flag_t etag;                    /* etag */
+
+#if (NGX_HTTP_GZIP)
+        ngx_flag_t gzip_vary;               /* gzip_vary */
+
+        ngx_uint_t gzip_http_version;       /* gzip_http_version */
+        ngx_uint_t gzip_proxied;            /* gzip_proxied */
+
+#if (NGX_PCRE)
+        ngx_array_t  *gzip_disable;            /* gzip_disable */
+#endif
+#endif
+
+#if (NGX_THREADS)
+        ngx_thread_pool_t         *thread_pool;
+        ngx_http_complex_value_t  *thread_pool_value;
+#endif
+
+#if (NGX_HAVE_OPENAT)
+        ngx_uint_t disable_symlinks;        /* disable_symlinks */
+        ngx_http_complex_value_t  *disable_symlinks_from;
+#endif
+
+        ngx_array_t  *error_pages;             /* error_page */
+        ngx_http_try_file_t    *try_files;     /* try_files */
+
+        ngx_path_t   *client_body_temp_path;   /* client_body_temp_path */
+
+        ngx_open_file_cache_t  *open_file_cache;
+        time_t        open_file_cache_valid;
+        ngx_uint_t    open_file_cache_min_uses;
+        ngx_flag_t    open_file_cache_errors;
+        ngx_flag_t    open_file_cache_events;
+
+        ngx_log_t    *error_log;
+
+        ngx_uint_t    types_hash_max_size;
+        ngx_uint_t    types_hash_bucket_size;
+
+        ngx_queue_t  *locations;                对应http{server{}}中出现的
+                                                所有location配置队列, 或者
+                                                嵌套的location配置
+    };
+
+    10.5 ngx_http_core_variables[]
+    @file: ~/src/http/ngx_http_variables.c
+    @role: http核心模块儿支持的内置变量数组
+
+    static ngx_http_variable_t  ngx_http_core_variables[] = {
+
+        { ngx_string("http_host"), NULL, ngx_http_variable_header,
+            offsetof(ngx_http_request_t, headers_in.host), 0, 0 },
+
+        ...
+    };
+
+    10.6 ngx_http_headers_in[]
+    @file: ~/src/http/ngx_http_request.c
+    @role: http模块儿对http头部选项的处理回调
+
+    ngx_http_header_t  ngx_http_headers_in[] = {
+        { ngx_string("Host"), offsetof(ngx_http_headers_in_t, host),
+            ngx_http_process_host },
+
+        ...
+    };
+
+

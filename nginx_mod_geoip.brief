@@ -1,0 +1,142 @@
+本文档摘录nginx的geoip模块儿的实现, 以期了解开源库geoip的使用方法,
+以期增加知识储备, 备忘
+
+The ngx_http_geoip_module module (0.8.6+) creates variables with values
+depending on the client IP address, using the precompiled MaxMind 
+databases.
+此模块儿利用客户端IP创建变量, 当然依赖预编译的MaxMind库
+
+This module is not built by default, it should be enabled with the
+--with-http_geoip_module configuration parameter.
+此模块儿默认不编译, 需要在./configure指令中使用--with-http_geoip_module
+关键字
+
+支持的语法关键字：
+        geoip_country file;     指定判断国家的数据库, 可使用以下变量引
+                                    用国家$geoip_country_code(如'US')/
+                                    $geoip_country_code3(如'USA')/
+                                    $geoip_country_name(如'United States')
+        geoip_city file;        指定数据库, determine the country/region/
+                                    city; 可使用以下变量
+                                    $geoip_city(如'Washington')...
+        geoip_org file;         指定数据库, determine the organization
+        geoip_proxy address | CIDR;
+        geoip_proxy_recursive on | off;
+                                参考<nginx_mod_geo.brief>
+
+<NOTE>
+    1) http://nginx.org/en/docs/http/ngx_http_geoip_module.html
+    2) geoip官网: https://www.maxmind.com/zh/home
+    3) http://blog.unixy.net/2010/07/how-to-build-your-own-cdn-
+            using-bind-geoip-nginx-and-varnish/
+    4) http://www.xingo8.com/5823.html
+    5) http://slaytanic.blog.51cto.com/2057708/516093/
+    6) How to build your own CDN using BIND, GeoIP, Nginx, Varnish.pdf
+    7) 文件: ~/src/http/modules/ngx_http_geoip_module.c
+
+<NOTE>典型配置
+    http {
+        geoip_country         GeoIP.dat;
+        geoip_city            GeoLiteCity.dat;
+        geoip_proxy           192.168.100.0/24;
+        geoip_proxy           2001:0db8::/32;
+        geoip_proxy_recursive on;
+        ...
+    };
+    
+
+
+1. ngx_http_geoip_country
+2. ngx_http_geoip_city_variable
+10.全局数据结构
+    ---ngx_http_geoip_conf_t
+    ---ngx_http_geo_module
+    ---ngx_http_geoip_vars[]
+
+
+
+1. ngx_http_geoip_country()
+    @role: 对应配置关键字geoip_country
+    @note: 
+        1) 语法"geoip_country xxx [utf8];"
+        2) ngx_http_geoip_city()函数与此函数类似, 处理
+            "geoip_city xxx [utf8];"
+
+    --GeoIP_open()                  赋值ngx_http_geoip_conf_t->country
+    --GeoIP_set_charset()           如果指定了第三个可选参数, utf8, 设置
+                                        对应的字符集
+
+2. ngx_http_geoip_city_variable()
+    @role: 根据客户端IP和geoip库, 返回匹配到的城市的变量值
+
+    --ngx_http_geoip_get_city_record()
+                                    获取对应的数据库记录
+        --ngx_http_geoip_addr()         获取客户端IP, 或X-Forwarded-For中的值
+        --GeoIP_record_by_ipnum()       提取对应的数据库记录
+    --ngx_memcpy()                  拷贝结果, 在参数中返回结果,
+                                        ngx_http_variable_value_t
+    --GeoIPRecord_delete()          清理结果资源
+
+10.全局数据结构
+    10.1 ngx_http_geoip_conf_t
+    @role: geoip模块儿的配置信息结构
+
+    typedef struct {
+        GeoIP        *country;          对应geoip_country配置
+        GeoIP        *org;              对应geoip_city配置
+        GeoIP        *city;             对应geoip_org配置
+        ngx_array_t  *proxies;          对应geoip_proxy配置, 类型ngx_cidr_t
+        ngx_flag_t    proxy_recursive;  对应geoip_proxy_recursive, 默认值0
+#if (NGX_HAVE_GEOIP_V6)
+        unsigned      country_v6:1;     是否支持IPv6
+        unsigned      org_v6:1;
+        unsigned      city_v6:1;
+#endif
+    } ngx_http_geoip_conf_t;
+
+    10.2 ngx_http_geo_module
+    @role: geoip模块儿
+
+    ngx_module_t  ngx_http_geoip_module = {
+        NGX_MODULE_V1,
+        &ngx_http_geoip_module_ctx,
+        ngx_http_geoip_commands,
+        NGX_HTTP_MODULE,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NGX_MODULE_V1_PADDING
+    };
+    
+    static ngx_http_module_t  ngx_http_geoip_module_ctx = {
+        ngx_http_geoip_add_variables,
+                                注册ngx_http_geoip_vars[]变量到
+                                ngx_http_core_main_conf_t->variables_keys
+        NULL,
+
+        ngx_http_geoip_create_conf,
+        ngx_http_geoip_init_conf,
+                                分配配置信息结构, ngx_http_geoip_conf_t;
+                                配置文件未设置的, 给定默认值
+        NULL,
+        NULL,
+
+        NULL,
+        NULL
+    };
+
+    10.3 ngx_http_geoip_vars[]
+    @role: geoip模块儿可用的内部变量
+
+    static ngx_http_variable_t  ngx_http_geoip_vars[] = {
+        { ngx_string("geoip_country_code"), NULL,
+        ngx_http_geoip_country_variable,
+        NGX_GEOIP_COUNTRY_CODE, 0, 0 },
+        ...
+    };
+
+

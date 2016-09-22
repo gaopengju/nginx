@@ -1,0 +1,27 @@
+本文档介绍nginx第三方模块，fair方式的负载均衡策略，备忘
+
+<NOTE>
+    1. https://github.com/gnosek/nginx-upstream-fair/blob/master/
+                ngx_http_upstream_fair_module.c
+    2. 参考《Nginx负载均衡算法简介.pptx》
+
+<NOTE>配置示例
+    upstream mongrel {
+        fair;
+        server 127.0.0.1:5000;
+        server 127.0.0.1:5001;
+        server 127.0.0.1:5002;
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,146 @@
+本文档摘录nginx的插口操作, 以期了解nginx对底层的操控, 备忘
+
+<NOTE>
+    1) 参考http://blog.csdn.net/livelylittlefish/article/details/7277607
+
+
+1. ngx_create_listening
+2. ngx_add_inherited_sockets
+3. ngx_open_listening_sockets
+10.全局数据结构
+    ---ngx_listening_t
+
+
+1. ngx_create_listening()
+    @file: ~/src/core/ngx_connection.c
+    @role: 创建监听
+
+    --ngx_array_push()          从ngx_cycle->listening分配ngx_listening_t
+        --ngx_memzero()
+        --初始化xxx->sockaddr/socklen
+    --ngx_sock_ntop()           初始化xxx->addr_text/addr_text_max_len
+    --初始化xxx->fd/type        = -1/SOCK_STREAM
+
+2. ngx_add_inherited_sockets()
+    @file: ~/src/core/nginx.c
+    @role: 分析通过export NGINX="16000:16500:16600;”继承的插口，并记录
+            到ngx_cycle->listening数组
+
+    --getenv()                  查看NGINX变量是否有值
+    --ngx_array_init()          初始化ngx_cycle->listening, 分配10个
+                                    ngx_listening_t结构
+    --for()                     处理全局变量数组
+        --ngx_atoi()                转换为数字
+        --ngx_array_push()          插入一个元素, 利用上述数字
+        --ngx_memzero()                 初始化其->fd
+    --赋值ngx_inherited         = 1
+    --ngx_set_inherited_sockets()
+                                遍历通过fd继承的插口, 获取插口属性并记录
+        --for()                     如，收、发缓存等
+            --ngx_palloc()              分配->sockaddr
+            --getsockname()             获取插口地址及长度
+            --ngx_sock_ntop()           初始化->addr_text
+            --初始化->backlog           = NGX_LISTEN_BACKLOG
+            --getsockopt()              初始化->rcvbuf/sndbuf/fastopen/
+                                        accept_filter/deferred_accept
+3. ngx_open_listening_sockets()
+    @file: ~/src/core/ngx_connection.c
+    @role: 打开ngx_cycle->listening对应的插口
+
+    --ngx_socket()                  创建插口
+    --setsockopt()                  设置SO_REUSEADDR属性
+    --ngx_nonblocking()             设置非阻塞
+    --bind()
+    --listen()
+
+10.全局数据结构
+    10.1 ngx_listening_t
+    @file: ~/src/core/ngx_connection.h
+    @role: 监听插口信息结构; 除继承外,
+            在函数ngx_http_add_listening()中分配此结构
+
+    typedef struct ngx_listening_s  ngx_listening_t;
+    struct ngx_listening_s {
+        ngx_socket_t fd;                插口描述符
+
+        struct sockaddr    *sockaddr;   插口地址
+        socklen_t           socklen;    地址长度
+        size_t              addr_text_max_len;
+        ngx_str_t           addr_text;  地址的字符串形式
+
+        int                 type;       插口类型, SOCK_STREAM
+
+        int   backlog;          listen()函数的第二个参数
+        int   rcvbuf;           接收缓存
+        int   sndbuf;           发送缓存
+#if (NGX_HAVE_KEEPALIVE_TUNABLE)
+        int   keepidle;
+        int   keepintvl;
+        int   keepcnt;
+#endif
+
+        ngx_connection_handler_pt   handler;
+                                接收连接的处理句柄,
+                                在ngx_http_add_listening()中被
+                                初始化为ngx_http_init_connection()
+
+        void     *servers;      监听的server数组? ngx_http_port_t,
+                                在ngx_http_add_addrs()中初始化;
+                                ngx_http_port_t->addrs[]元素类型为
+                                ngx_http_in_addr_t, ->addr对应监听
+                                地址, ->conf对应监听服务器配置
+
+                                结构组织图, 参考图9-2 p185《深入剖析nginx》
+        ngx_log_t log;
+        ngx_log_t *logp;
+
+        size_t      pool_size;
+        /* should be here because of the AcceptEx() preread */
+        size_t      post_accept_buffer_size;
+        ngx_msec_t  post_accept_timeout;
+                                Accept后, 等待客户端请求数据的超时时限
+
+        ngx_listening_t    *previous;
+                                形成链表
+        ngx_connection_t   *connection; 
+                                插口对应的连接，ngx_cycle->connections[]
+
+        unsigned    open:1;
+        unsigned    remain:1;
+        unsigned    ignore:1;
+
+        unsigned  bound:1;        /* already bound */
+        unsigned  inherited:1;  是否为从前一个进程继承而来 
+        unsigned  nonblocking_accept:1;
+        unsigned  listen:1;     是否处于监听状态, 已调用listen()
+        unsigned  nonblocking:1;
+        unsigned  shared:1;     是否在进程或线程间共享
+        unsigned  addr_ntop:1;
+
+#if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
+        unsigned ipv6only:1;
+#endif
+        unsigned keepalive:2;
+
+#if (NGX_HAVE_DEFERRED_ACCEPT)
+        unsigned deferred_accept:1;  
+                                是否支持TCP_DEFER_ACCEPT
+        unsigned delete_deferred:1;
+        unsigned add_deferred:1;
+        char *accept_filter;    是否支持SO_ACCEPTFILTER, 字符过滤
+#endif
+#if (NGX_HAVE_SETFIB)
+        int  setfib;
+#endif
+
+        int  fastopen;          是否支持TCP_FASTOPEN, 即三次
+                                握手时也用来传递数据
+    };
+
+
+
+
+
+
+
+
