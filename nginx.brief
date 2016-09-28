@@ -1,18 +1,3 @@
-本系列文档摘录nginx，了解upstream负载均衡模块儿，以其加深对HTTP协议的理解。
-
-<NOTE>
-    1. 参考http://tengine.taobao.org/book/index.html
-    2. 参考http://nginx.org/en/docs/
-    3. 参考《深入理解Nginx：模块开发与架构解析》
-    4. 参考《深入剖析Nginx》
-
-
-1. main
-10.全局数据结构
-    ---ngx_sys_errlist[]
-    ---ngx_process
-
-
 1. main()
     @file: ~/src/core/nginx.c
     @role: nginx的入口点

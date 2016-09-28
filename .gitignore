@@ -1,1 +1,5 @@
 *.~undo-tree~
+GPATH
+GRTAGS
+GSYMS
+GTAGS

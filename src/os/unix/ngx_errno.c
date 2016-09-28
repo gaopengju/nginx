@@ -25,7 +25,7 @@
  */
 
 
-static ngx_str_t  *ngx_sys_errlist;
+static ngx_str_t  *ngx_sys_errlist; /* 错误信息缓存数组 */
 static ngx_str_t   ngx_unknown_error = ngx_string("Unknown error");
 
 
@@ -63,7 +63,7 @@ ngx_strerror_init(void)
     }
 
     for (err = 0; err < NGX_SYS_NERR; err++) {
-        msg = strerror(err);
+        msg = strerror(err);          /* 利用linux的错误信息填充本地缓存 */
         len = ngx_strlen(msg);
 
         p = malloc(len);
