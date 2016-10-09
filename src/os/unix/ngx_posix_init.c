@@ -10,7 +10,7 @@
 #include <nginx.h>
 
 
-ngx_int_t   ngx_ncpu;
+ngx_int_t   ngx_ncpu;                          /* 在线的cpu核数 */
 ngx_int_t   ngx_max_sockets;                   /* 支持的最大socket fd数；目前由getrlimit(RLIMIT_NOFILE, ...)决定 */
 ngx_uint_t  ngx_inherited_nonblocking;
 ngx_uint_t  ngx_tcp_nodelay_and_tcp_nopush;
@@ -29,14 +29,14 @@ ngx_os_io_t ngx_os_io = {
     0
 };
 
-
+/* 系统特利化的部分初始化入口 */
 ngx_int_t
 ngx_os_init(ngx_log_t *log)
 {
     ngx_uint_t  n;
 
 #if (NGX_HAVE_OS_SPECIFIC_INIT)
-    if (ngx_os_specific_init(log) != NGX_OK) {
+    if (ngx_os_specific_init(log) != NGX_OK) {      /* 根据平台特利化底层IO */
         return NGX_ERROR;
     }
 #endif
@@ -45,13 +45,13 @@ ngx_os_init(ngx_log_t *log)
         return NGX_ERROR;
     }
 
-    ngx_pagesize = getpagesize();
-    ngx_cacheline_size = NGX_CPU_CACHE_LINE;
+    ngx_pagesize = getpagesize();                   /* 获取页大小 */
+    ngx_cacheline_size = NGX_CPU_CACHE_LINE;        /* cpu cache line */
 
     for (n = ngx_pagesize; n >>= 1; ngx_pagesize_shift++) { /* void */ }
 
 #if (NGX_HAVE_SC_NPROCESSORS_ONLN)
-    if (ngx_ncpu == 0) {
+    if (ngx_ncpu == 0) {                            /* 获取当前在线的cpu数 */
         ngx_ncpu = sysconf(_SC_NPROCESSORS_ONLN);
     }
 #endif
@@ -60,7 +60,7 @@ ngx_os_init(ngx_log_t *log)
         ngx_ncpu = 1;
     }
 
-    ngx_cpuinfo();
+    ngx_cpuinfo();                                 /* 通过cpuid指令获取详细信息 */
 
     if (getrlimit(RLIMIT_NOFILE, &rlmt) == -1) {
         ngx_log_error(NGX_LOG_ALERT, log, errno,
@@ -68,7 +68,7 @@ ngx_os_init(ngx_log_t *log)
         return NGX_ERROR;
     }
 
-    ngx_max_sockets = (ngx_int_t) rlmt.rlim_cur;
+    ngx_max_sockets = (ngx_int_t) rlmt.rlim_cur;   /* 获取每进程可打开的fd上限 */
 
 #if (NGX_HAVE_INHERITED_NONBLOCK || NGX_HAVE_ACCEPT4)
     ngx_inherited_nonblocking = 1;
@@ -76,7 +76,7 @@ ngx_os_init(ngx_log_t *log)
     ngx_inherited_nonblocking = 0;
 #endif
 
-    srandom(ngx_time());
+    srandom(ngx_time());                           /* 随机数生成器种子初始化 */
 
     return NGX_OK;
 }

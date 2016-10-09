@@ -180,7 +180,7 @@ static u_char      *ngx_conf_params;    /* -p，命令行指定的配置信息 *
 static char        *ngx_signal;         /* */
 
 
-static char **ngx_os_environ;
+static char **ngx_os_environ;           /* C语言环境environ变量指针 */
 
 
 /* nginx的入口函数 */
@@ -245,6 +245,7 @@ main(int argc, char *const *argv)
      * ngx_process_options()
      */
 
+    /* 初始化当前的配置周期结构，指向栈上变量 */
     ngx_memzero(&init_cycle, sizeof(ngx_cycle_t));
     init_cycle.log = log;
     ngx_cycle = &init_cycle;
@@ -254,15 +255,17 @@ main(int argc, char *const *argv)
         return 1;
     }
 
+    /* 存储命令行参数 */
     if (ngx_save_argv(&init_cycle, argc, argv) != NGX_OK) {
         return 1;
     }
 
+    /* 处理命令行参数 */
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
     }
 
-    /* 获取系统参数，如CPU个数、cache大小等 */
+    /* 获取系统参数，如CPU核数、cache大小、文件描述符上限、页表大小等 */
     if (ngx_os_init(log) != NGX_OK) {
         return 1;
     }
@@ -849,9 +852,10 @@ ngx_save_argv(ngx_cycle_t *cycle, int argc, char *const *argv)
     size_t     len;
     ngx_int_t  i;
 
-    ngx_os_argv = (char **) argv;
-    ngx_argc = argc;
+    ngx_os_argv = (char **) argv;           /* 保存argv[]指针 */
+    ngx_argc = argc;                        /* 保存argc */
 
+    /* 分配内存，再保存一份argv[] */
     ngx_argv = ngx_alloc((argc + 1) * sizeof(char *), cycle->log);
     if (ngx_argv == NULL) {
         return NGX_ERROR;
@@ -872,7 +876,7 @@ ngx_save_argv(ngx_cycle_t *cycle, int argc, char *const *argv)
 
 #endif
 
-    ngx_os_environ = environ;
+    ngx_os_environ = environ;             /* 保存环境变量指针 */
 
     return NGX_OK;
 }
@@ -898,7 +902,7 @@ ngx_process_options(ngx_cycle_t *cycle)
             p[len++] = '/';
         }
 
-        cycle->conf_prefix.len = len;
+        cycle->conf_prefix.len = len;      /* 初始化前缀路径，-p参数 */
         cycle->conf_prefix.data = p;
         cycle->prefix.len = len;
         cycle->prefix.data = p;
@@ -921,7 +925,7 @@ ngx_process_options(ngx_cycle_t *cycle)
 
         p[len++] = '/';
 
-        cycle->conf_prefix.len = len;
+        cycle->conf_prefix.len = len;      /* 无前缀路径，则设置为当前目录 */
         cycle->conf_prefix.data = p;
         cycle->prefix.len = len;
         cycle->prefix.data = p;
@@ -938,7 +942,7 @@ ngx_process_options(ngx_cycle_t *cycle)
 #endif
     }
 
-    if (ngx_conf_file) {
+    if (ngx_conf_file) {                   /* 配置文件 */
         cycle->conf_file.len = ngx_strlen(ngx_conf_file);
         cycle->conf_file.data = ngx_conf_file;
 

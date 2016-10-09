@@ -9,10 +9,10 @@
 #include <ngx_core.h>
 
 
-u_char  ngx_linux_kern_ostype[50];
-u_char  ngx_linux_kern_osrelease[50];
+u_char  ngx_linux_kern_ostype[50];         /* 内核类型 */
+u_char  ngx_linux_kern_osrelease[50];      /* 内核版本 */
 
-
+/* 特定于linux的底层IO函数集 */
 static ngx_os_io_t ngx_linux_io = {
     ngx_unix_recv,
     ngx_readv_chain,
@@ -45,7 +45,7 @@ ngx_os_specific_init(ngx_log_t *log)
     (void) ngx_cpystrn(ngx_linux_kern_osrelease, (u_char *) u.release,
                        sizeof(ngx_linux_kern_osrelease));
 
-    ngx_os_io = ngx_linux_io;
+    ngx_os_io = ngx_linux_io;      /* 设置不同平台的底层IO */
 
     return NGX_OK;
 }

@@ -26,9 +26,9 @@ static void ngx_process_get_status(void);
 static void ngx_unlock_mutexes(ngx_pid_t pid);
 
 
-int              ngx_argc;
-char           **ngx_argv;
-char           **ngx_os_argv;
+int              ngx_argc;                /* main()的参数argc */
+char           **ngx_argv;                /* 分配内存，拷贝argv[] */
+char           **ngx_os_argv;             /* main()的参数argv指针 */
 
 ngx_int_t        ngx_process_slot;
 ngx_socket_t     ngx_channel;

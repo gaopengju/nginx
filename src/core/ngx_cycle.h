@@ -36,10 +36,10 @@ struct ngx_shm_zone_s {
 
 
 struct ngx_cycle_s {
-    void                  ****conf_ctx;
-    ngx_pool_t               *pool;
+    void                  ****conf_ctx;        /**/
+    ngx_pool_t               *pool;            /**/
 
-    ngx_log_t                *log;
+    ngx_log_t                *log;             /**/
     ngx_log_t                 new_log;
 
     ngx_uint_t                log_use_stderr;  /* unsigned  log_use_stderr:1; */
@@ -69,10 +69,10 @@ struct ngx_cycle_s {
 
     ngx_cycle_t              *old_cycle;
 
-    ngx_str_t                 conf_file;
+    ngx_str_t                 conf_file;      /* 配置文件，-c参数 */
     ngx_str_t                 conf_param;
-    ngx_str_t                 conf_prefix;
-    ngx_str_t                 prefix;
+    ngx_str_t                 conf_prefix;    /* 配置文件nginx.conf前置路径，-p参数 */
+    ngx_str_t                 prefix;         /* 配置路径前缀，-p参数 */
     ngx_str_t                 lock_file;
     ngx_str_t                 hostname;
 };

@@ -17,7 +17,7 @@ static ngx_int_t ngx_test_lockfile(u_char *file, ngx_log_t *log);
 static void ngx_clean_old_cycles(ngx_event_t *ev);
 
 
-volatile ngx_cycle_t  *ngx_cycle;
+volatile ngx_cycle_t  *ngx_cycle;             /* 当前配置周期，加载并解析配置的过程 */
 ngx_array_t            ngx_old_cycles;
 
 static ngx_pool_t     *ngx_temp_pool;
