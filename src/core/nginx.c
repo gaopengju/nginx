@@ -176,7 +176,7 @@ static ngx_uint_t   ngx_show_version;   /* -v */
 static ngx_uint_t   ngx_show_configure; /* -V */
 static u_char      *ngx_prefix;         /* -p，工作路径 */
 static u_char      *ngx_conf_file;      /* -c，指定配置文件 */
-static u_char      *ngx_conf_params;    /* -p，命令行指定的配置信息 */
+static u_char      *ngx_conf_params;    /* -g，命令行指定的配置信息 */
 static char        *ngx_signal;         /* */
 
 
@@ -260,7 +260,7 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    /* 处理命令行参数 */
+    /* 处理命令行参数，同步配置文件、命令行配置等到当前配置结构体 */
     if (ngx_process_options(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -278,7 +278,7 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    /* 解析继承的socket fd */
+    /* 解析通过环境变量NGINX继承的socket fd */
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -459,6 +459,7 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
     ngx_int_t         s;
     ngx_listening_t  *ls;
 
+    /* 读取环境变量'$NGINX'，格式 '1245:3456:4444...' */
     inherited = (u_char *) getenv(NGINX_VAR);
 
     if (inherited == NULL) {
@@ -468,6 +469,7 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "using inherited sockets from \"%s\"", inherited);
 
+    /* 利用分隔符':/;'拆分，然后存储 */
     if (ngx_array_init(&cycle->listening, cycle->pool, 10,
                        sizeof(ngx_listening_t))
         != NGX_OK)
@@ -505,8 +507,9 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
                       " environment variable, ignoring", v);
     }
 
-    ngx_inherited = 1;
+    ngx_inherited = 1;              /* 设置标识 */
 
+    /* 通过fd，填充插口结构属性 */
     return ngx_set_inherited_sockets(cycle);
 }
 
@@ -942,7 +945,7 @@ ngx_process_options(ngx_cycle_t *cycle)
 #endif
     }
 
-    if (ngx_conf_file) {                   /* 配置文件 */
+    if (ngx_conf_file) {                   /* 获取配置文件 */
         cycle->conf_file.len = ngx_strlen(ngx_conf_file);
         cycle->conf_file.data = ngx_conf_file;
 
@@ -965,7 +968,7 @@ ngx_process_options(ngx_cycle_t *cycle)
         }
     }
 
-    if (ngx_conf_params) {
+    if (ngx_conf_params) {                 /* 命令行指定的配置信息，参数-g */
         cycle->conf_param.len = ngx_strlen(ngx_conf_params);
         cycle->conf_param.data = ngx_conf_params;
     }

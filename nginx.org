@@ -14,6 +14,9 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 缓存时间设定了定量的槽位，构成缓存循环队列；以免某些请求的处理时间大于s
 的粒度，造成紊乱。
 
+* 插口继承
+*函数* ngx_add_inherited_sockets():~/src/core/nginx.c
 
+启动nginx时，可通过环境变量NGINX继承已有的socket插口
 
 

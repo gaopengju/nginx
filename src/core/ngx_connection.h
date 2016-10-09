@@ -14,19 +14,19 @@
 
 
 typedef struct ngx_listening_s  ngx_listening_t;
-
+/* nginx监听的插口描述结构 */
 struct ngx_listening_s {
-    ngx_socket_t        fd;
+    ngx_socket_t        fd;         /* 插口fd */      
 
-    struct sockaddr    *sockaddr;
+    struct sockaddr    *sockaddr;   /* 地址 */
     socklen_t           socklen;    /* size of sockaddr */
     size_t              addr_text_max_len;
-    ngx_str_t           addr_text;
+    ngx_str_t           addr_text;  /* 地址的字符串形式，如'1.1.1.1:65530'*/
 
-    int                 type;
+    int                 type;       /* 插口类型，如SOCK_STREAM */
 
-    int                 backlog;
-    int                 rcvbuf;
+    int                 backlog;    /* listen()的第二个参数，NGX_LISTEN_BACKLOG=511 */
+    int                 rcvbuf;     /* 插口的收发缓存 */
     int                 sndbuf;
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     int                 keepidle;
@@ -70,7 +70,7 @@ struct ngx_listening_s {
     unsigned            ipv6only:1;
 #endif
 #if (NGX_HAVE_REUSEPORT)
-    unsigned            reuseport:1;
+    unsigned            reuseport:1;      /* 是否支持端口重用 */
     unsigned            add_reuseport:1;
 #endif
     unsigned            keepalive:2;

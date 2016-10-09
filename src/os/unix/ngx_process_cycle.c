@@ -44,7 +44,7 @@ sig_atomic_t  ngx_reopen;
 
 sig_atomic_t  ngx_change_binary;
 ngx_pid_t     ngx_new_binary;
-ngx_uint_t    ngx_inherited;
+ngx_uint_t    ngx_inherited;         /* =1, 表示通过环境变量NGINX继承来插口fd */
 ngx_uint_t    ngx_daemonized;
 
 sig_atomic_t  ngx_noaccept;

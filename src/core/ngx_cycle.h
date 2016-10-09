@@ -54,7 +54,7 @@ struct ngx_cycle_s {
 
     ngx_queue_t               reusable_connections_queue;
 
-    ngx_array_t               listening;
+    ngx_array_t               listening;      /* 监听的插口 */
     ngx_array_t               paths;
     ngx_array_t               config_dump;
     ngx_list_t                open_files;
@@ -70,7 +70,7 @@ struct ngx_cycle_s {
     ngx_cycle_t              *old_cycle;
 
     ngx_str_t                 conf_file;      /* 配置文件，-c参数 */
-    ngx_str_t                 conf_param;
+    ngx_str_t                 conf_param;     /* 命令行配置，-g参数 */
     ngx_str_t                 conf_prefix;    /* 配置文件nginx.conf前置路径，-p参数 */
     ngx_str_t                 prefix;         /* 配置路径前缀，-p参数 */
     ngx_str_t                 lock_file;

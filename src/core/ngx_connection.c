@@ -148,9 +148,11 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
     int                        reuseport;
 #endif
 
+    /* 遍历集成的插口数组 */
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
 
+        /* 通过getsockname()获取插口地址 */
         ls[i].sockaddr = ngx_palloc(cycle->pool, sizeof(ngx_sockaddr_t));
         if (ls[i].sockaddr == NULL) {
             return NGX_ERROR;
@@ -165,6 +167,7 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
             continue;
         }
 
+        /* 计算插口地址的字符串形式的内存大小 */
         switch (ls[i].sockaddr->sa_family) {
 
 #if (NGX_HAVE_INET6)
@@ -199,6 +202,7 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
             return NGX_ERROR;
         }
 
+        /* 存储字符串形式的地址 */
         len = ngx_sock_ntop(ls[i].sockaddr, ls[i].socklen,
                             ls[i].addr_text.data, len, 1);
         if (len == 0) {
@@ -211,6 +215,7 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 
         olen = sizeof(int);
 
+        /* 通过getsockopt()函数获取插口其它特性，如SOCK_STREAM/收发缓存等 */
         if (getsockopt(ls[i].fd, SOL_SOCKET, SO_TYPE, (void *) &ls[i].type,
                        &olen)
             == -1)
@@ -268,7 +273,7 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
 #endif
 #endif
 
-#if (NGX_HAVE_REUSEPORT)
+#if (NGX_HAVE_REUSEPORT)            /* 获取端口重用特性 */
 
         reuseport = 0;
         olen = sizeof(int);
@@ -291,7 +296,7 @@ ngx_set_inherited_sockets(ngx_cycle_t *cycle)
             continue;
         }
 
-#if (NGX_HAVE_TCP_FASTOPEN)
+#if (NGX_HAVE_TCP_FASTOPEN)        /* 快速打开特性 */
 
         olen = sizeof(int);
 
