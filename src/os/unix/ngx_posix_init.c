@@ -11,7 +11,7 @@
 
 
 ngx_int_t   ngx_ncpu;
-ngx_int_t   ngx_max_sockets;
+ngx_int_t   ngx_max_sockets;                   /* 支持的最大socket fd数；目前由getrlimit(RLIMIT_NOFILE, ...)决定 */
 ngx_uint_t  ngx_inherited_nonblocking;
 ngx_uint_t  ngx_tcp_nodelay_and_tcp_nopush;
 

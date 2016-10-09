@@ -14,9 +14,9 @@
 
 
 typedef struct {
-    time_t      sec;
-    ngx_uint_t  msec;
-    ngx_int_t   gmtoff;
+    time_t      sec;        /* Epoch秒 */
+    ngx_uint_t  msec;       /* Epoch毫秒，非偏移 */
+    ngx_int_t   gmtoff;     /* 相对于UTC的时区偏移 */
 } ngx_time_t;
 
 

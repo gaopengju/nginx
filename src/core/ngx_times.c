@@ -16,15 +16,20 @@
  * values and strings from the current slot.  Thus thread may get the corrupted
  * values only if it is preempted while copying and then it is not scheduled
  * to run more than NGX_TIME_SLOTS seconds.
+ *
+ * 在nginx中时间可被信号或其他线程更新但更新操作属于少量操作，必须持有锁;
+ * 而读操作非常高频，不需要持有锁，直接从当前slot中读取。因此当读取操作被
+ * 抢占，并且重新调度的时间长于NGX_TIME_SLOTS秒时，读取的结果可能是corrupted
+ * 的(因为缓存时间的总量为NGX_TIME_SLOTS, 超过此秒后，缓存被覆写)。
  */
 
 #define NGX_TIME_SLOTS   64
 
-static ngx_uint_t        slot;
-static ngx_atomic_t      ngx_time_lock;
+static ngx_uint_t        slot;             /* 当前缓存时间的槽位索引 */
+static ngx_atomic_t      ngx_time_lock;    /* 原子锁，用于进程内线程、信号等之间的同步 */
 
-volatile ngx_msec_t      ngx_current_msec;
-volatile ngx_time_t     *ngx_cached_time;
+volatile ngx_msec_t      ngx_current_msec;            /* utc毫秒数 */
+volatile ngx_time_t     *ngx_cached_time;             /* 当前时间，对应cached_time[]的某个槽位 */
 volatile ngx_str_t       ngx_cached_err_log_time;
 volatile ngx_str_t       ngx_cached_http_time;
 volatile ngx_str_t       ngx_cached_http_log_time;
@@ -42,10 +47,11 @@ volatile ngx_str_t       ngx_cached_syslog_time;
 static ngx_int_t         cached_gmtoff;
 #endif
 
+/* 当前缓存的时间，用于日志等，加速 */
 static ngx_time_t        cached_time[NGX_TIME_SLOTS];
 static u_char            cached_err_log_time[NGX_TIME_SLOTS]
                                     [sizeof("1970/09/28 12:00:00")];
-static u_char            cached_http_time[NGX_TIME_SLOTS]
+static u_char            cached_http_time[NGX_TIME_SLOTS]  /* GMT时间 */
                                     [sizeof("Mon, 28 Sep 1970 06:00:00 GMT")];
 static u_char            cached_http_log_time[NGX_TIME_SLOTS]
                                     [sizeof("28/Sep/1970:12:00:00 +0600")];
@@ -59,17 +65,21 @@ static char  *week[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 static char  *months[] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
+/* 初始化缓存的时间；缓存纯粹为加速设计 */
 void
 ngx_time_init(void)
 {
+    /* 各种格式的时间初始化 */
     ngx_cached_err_log_time.len = sizeof("1970/09/28 12:00:00") - 1;
     ngx_cached_http_time.len = sizeof("Mon, 28 Sep 1970 06:00:00 GMT") - 1;
     ngx_cached_http_log_time.len = sizeof("28/Sep/1970:12:00:00 +0600") - 1;
     ngx_cached_http_log_iso8601.len = sizeof("1970-09-28T12:00:00+06:00") - 1;
     ngx_cached_syslog_time.len = sizeof("Sep 28 12:00:00") - 1;
 
+    /* 指向第1个槽位 */
     ngx_cached_time = &cached_time[0];
 
+    /* 更新缓存 */
     ngx_time_update();
 }
 
@@ -84,11 +94,12 @@ ngx_time_update(void)
     ngx_time_t      *tp;
     struct timeval   tv;
 
+    /* 加锁 */
     if (!ngx_trylock(&ngx_time_lock)) {
         return;
     }
 
-    ngx_gettimeofday(&tv);
+    ngx_gettimeofday(&tv);       /* 调用linux的gettimeofday() */
 
     sec = tv.tv_sec;
     msec = tv.tv_usec / 1000;
@@ -97,7 +108,7 @@ ngx_time_update(void)
 
     tp = &cached_time[slot];
 
-    if (tp->sec == sec) {
+    if (tp->sec == sec) {        /* 本秒内不需要更新槽位 */
         tp->msec = msec;
         ngx_unlock(&ngx_time_lock);
         return;
@@ -109,12 +120,12 @@ ngx_time_update(void)
         slot++;
     }
 
-    tp = &cached_time[slot];
+    tp = &cached_time[slot];     /* 获取对应的更新槽位 */
 
     tp->sec = sec;
     tp->msec = msec;
 
-    ngx_gmtime(sec, &gmt);
+    ngx_gmtime(sec, &gmt);       /* 获取对应的GMT时间 */
 
 
     p0 = &cached_http_time[slot][0];
@@ -137,13 +148,13 @@ ngx_time_update(void)
 
 #else
 
-    ngx_localtime(sec, &tm);
+    ngx_localtime(sec, &tm);     /* 获取带时区偏移的时间 */
     cached_gmtoff = ngx_timezone(tm.ngx_tm_isdst);
     tp->gmtoff = cached_gmtoff;
 
 #endif
 
-
+    /* 构建对应格式的缓存时间 */
     p1 = &cached_err_log_time[slot][0];
 
     (void) ngx_sprintf(p1, "%4d/%02d/%02d %02d:%02d:%02d",
@@ -176,6 +187,7 @@ ngx_time_update(void)
                        months[tm.ngx_tm_mon - 1], tm.ngx_tm_mday,
                        tm.ngx_tm_hour, tm.ngx_tm_min, tm.ngx_tm_sec);
 
+    /* 内存栅，使得slot切换被进程所有环境看到 */
     ngx_memory_barrier();
 
     ngx_cached_time = tp;

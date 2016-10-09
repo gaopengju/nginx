@@ -201,7 +201,7 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    /* 处理命令行参数 */
+    /* 处理命令行参数：设置相应的全局变量，待后续处理 */
     if (ngx_get_options(argc, argv) != NGX_OK) {
         return 1;
     }
@@ -215,6 +215,7 @@ main(int argc, char *const *argv)
         }
     }
 
+    /* 由系统限制决定每进程的socket fd数量 */
     /* TODO */ ngx_max_sockets = -1;
 
     /* 初始化缓存时间，ngx_cached_time */
@@ -820,7 +821,7 @@ ngx_get_options(int argc, char *const *argv)
                 ngx_log_stderr(0, "invalid option: \"-s %s\"", ngx_signal);
                 return NGX_ERROR;
 
-            default:
+            default:            /* 默认出错退出 */
                 ngx_log_stderr(0, "invalid option: \"%c\"", *(p - 1));
                 return NGX_ERROR;
             }
