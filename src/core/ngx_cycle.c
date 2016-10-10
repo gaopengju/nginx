@@ -348,7 +348,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         goto failed;
     }
 
-
+    /* 创建目录ngx_cycle_t->paths */
     if (ngx_create_paths(cycle, ccf->user) != NGX_OK) {
         goto failed;
     }
@@ -358,8 +358,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         goto failed;
     }
 
-    /* open the new files */
-
+    /* 遍历打开ngx_cycle_t->open_files，open the new files */
     part = &cycle->open_files.part;
     file = part->elts;
 
@@ -408,8 +407,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     pool->log = &cycle->new_log;
 
 
-    /* create shared memory */
-
+    /* 创建共享内存，ngx_cycle_t->shared_memory，create shared memory */
     part = &cycle->shared_memory.part;
     shm_zone = part->elts;
 
@@ -501,7 +499,6 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
 
     /* handle the listening sockets */
-
     if (old_cycle->listening.nelts) {
         ls = old_cycle->listening.elts;
         for (i = 0; i < old_cycle->listening.nelts; i++) {
@@ -614,6 +611,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
     }
 
+    /* <Bang!!!>调用socket、bind、listen() */
     if (ngx_open_listening_sockets(cycle) != NGX_OK) {
         goto failed;
     }
@@ -623,21 +621,21 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     }
 
 
-    /* commit the new cycle configuration */
-
+    /* 重定向错误输出，commit the new cycle configuration */
     if (!ngx_use_stderr) {
         (void) ngx_log_redirect_stderr(cycle);
     }
 
     pool->log = cycle->log;
 
+    /* 为启动使模块儿功能，解析配置后，初始化；大部份模块儿没有此句柄 */
     if (ngx_init_modules(cycle) != NGX_OK) {
         /* fatal */
         exit(1);
     }
 
 
-    /* close and delete stuff that lefts from an old cycle */
+    /* 后续为清理资源， close and delete stuff that lefts from an old cycle */
 
     /* free the unnecessary shared memory */
 

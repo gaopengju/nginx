@@ -36,16 +36,16 @@ struct ngx_shm_zone_s {
 
 
 struct ngx_cycle_s {
-    void                  ****conf_ctx;        /**/
-    ngx_pool_t               *pool;            /**/
+    void                  ****conf_ctx;        /* 模块儿配置结构内存 */
+    ngx_pool_t               *pool;            /* 对应的内存池 */
 
-    ngx_log_t                *log;             /**/
+    ngx_log_t                *log;             /* 日志描述结构 */
     ngx_log_t                 new_log;
 
     ngx_uint_t                log_use_stderr;  /* unsigned  log_use_stderr:1; */
 
     ngx_connection_t        **files;
-    ngx_connection_t         *free_connections;
+    ngx_connection_t         *free_connections;  /* 维护空闲连接单链表 */
     ngx_uint_t                free_connection_n;
 
     ngx_module_t            **modules;        /* 本配置周期对应的模块儿信息，ngx_modules[]的副本 */
@@ -53,21 +53,32 @@ struct ngx_cycle_s {
     ngx_uint_t                modules_used;    /* unsigned  modules_used:1; */
 
     ngx_queue_t               reusable_connections_queue;
-
-    ngx_array_t               listening;      /* 监听的插口 */
+                                              /* 可重用队列, 当ngx_connection_t->reusable
+                                                 =1, 则加入此队列; 当进程资源紧张, 没
+                                                 有空闲连接可用时, 此队列中的连接将被释放,
+                                                 重用; 通过ngx_reusable_connection()
+                                                 函数可加入、移出此队列*/
+    ngx_array_t               listening;      /* 维护监听接口套接字; 如果是通过reload
+                                                 方式加载, 初始时为继承的老进程的监听
+                                                 插口fd数组; 也可以通过环境变量继承已
+                                                 打开的插口数组, export NGINX="
+                                                 16000:16500:16600;" */
     ngx_array_t               paths;
     ngx_array_t               config_dump;
     ngx_list_t                open_files;
     ngx_list_t                shared_memory;
 
-    ngx_uint_t                connection_n;
-    ngx_uint_t                files_n;
+    ngx_uint_t                connection_n;   /* 配置events{}中参数worker_connections
+                                                 的值，默认512; =ngx_event_conf_t
+                                                 ->connections; 单个worker连接数
+                                                 上限*/
+    ngx_uint_t                files_n;        /* files[]数组的大小 */
 
-    ngx_connection_t         *connections;
-    ngx_event_t              *read_events;
-    ngx_event_t              *write_events;
+    ngx_connection_t         *connections;    /* 初始时分配的连接结构池, connection_n */
+    ngx_event_t              *read_events;    /* 连接的读事件, connection_n */
+    ngx_event_t              *write_events;   /* 连接的写事件, connection_n */
 
-    ngx_cycle_t              *old_cycle;
+    ngx_cycle_t              *old_cycle;      /* 老的cycle, 以此为模板初始化新cycle结构 */
 
     ngx_str_t                 conf_file;      /* 配置文件，-c参数 */
     ngx_str_t                 conf_param;     /* 命令行配置，-g参数 */

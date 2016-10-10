@@ -332,6 +332,7 @@ main(int argc, char *const *argv)
 
     ngx_os_status(cycle->log);
 
+    /* 保存配置信息 */
     ngx_cycle = cycle;
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
@@ -366,25 +367,24 @@ main(int argc, char *const *argv)
         return 1;
     }
 
+    /* 重定向错误输出到日志fd */
     if (ngx_log_redirect_stderr(cycle) != NGX_OK) {
         return 1;
     }
-
     if (log->file->fd != ngx_stderr) {
         if (ngx_close_file(log->file->fd) == NGX_FILE_ERROR) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                           ngx_close_file_n " built-in log failed");
         }
     }
-
     ngx_use_stderr = 0;
 
     /* <Bang!!!>启动worker进程 */
     if (ngx_process == NGX_PROCESS_SINGLE) {
-        ngx_single_process_cycle(cycle);
+        ngx_single_process_cycle(cycle);       /* 单进程模式 */
 
     } else {
-        ngx_master_process_cycle(cycle);
+        ngx_master_process_cycle(cycle);       /* master + worker模式 */
     }
 
     return 0;

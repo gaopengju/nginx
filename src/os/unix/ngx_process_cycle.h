@@ -20,11 +20,11 @@
 #define NGX_CMD_REOPEN         5
 
 
-#define NGX_PROCESS_SINGLE     0
-#define NGX_PROCESS_MASTER     1
-#define NGX_PROCESS_SIGNALLER  2
-#define NGX_PROCESS_WORKER     3
-#define NGX_PROCESS_HELPER     4
+#define NGX_PROCESS_SINGLE     0      /* 单进程模式 */
+#define NGX_PROCESS_MASTER     1      /* master+worker的master进程 */
+#define NGX_PROCESS_SIGNALLER  2      /* 处理信号模式，即处理-s参数的情况 */
+#define NGX_PROCESS_WORKER     3      /* master+worker的worker进程*/
+#define NGX_PROCESS_HELPER     4      /* cache进程；处理命令行参数-h的进程 */
 
 
 typedef struct {

@@ -69,7 +69,7 @@ ngx_module_t  ngx_errlog_module = {
 
 static ngx_log_t        ngx_log;
 static ngx_open_file_t  ngx_log_file;
-ngx_uint_t              ngx_use_stderr = 1;
+ngx_uint_t              ngx_use_stderr = 1;     /* 是否使用stderr */
 
 
 static ngx_str_t err_levels[] = {
