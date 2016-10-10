@@ -6,7 +6,7 @@
 *文件* main():~/src/core/nginx.c
 
 * 时间缓存
-*文件* ~/src/core/ngx_times.c
+*函数* ngx_time_init()：~/src/core/ngx_times.c
 
 nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串格式；此设计使得
 少更新多读取的时间操作尤其高效。
@@ -18,5 +18,36 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 *函数* ngx_add_inherited_sockets():~/src/core/nginx.c
 
 启动nginx时，可通过环境变量NGINX继承已有的socket插口
+
+* 配置解析
+*函数* ngx_conf_parse():~/src/core/ngx_conf_file.c
+
+* 模块儿初始化流程
+#+BEGIN_EXAMPLE
+--main()                        入口，~/src/core/nginx.c
+    --ngx_preinit_modules()         初始化ngx_modules[].index及模块儿名
+    --ngx_init_cycle()              配置解析
+        --ngx_cycle_modules()           创建模块儿的配置环境, 并初始化
+        --ngx_modules[]->ctx->create_conf()  
+                                        NGX_CORE_MODULE类型模块创建配置环境,ngx_cycle->conf_ctx[]
+        --ngx_conf_parse()
+            --ngx_conf_handler()            解析配置主入口，ngx_conf_file.c
+                -- 查找ngx_cycle_t->modules[]->commands[]
+                   获取对应的处理命令
+                -- 调用命令->set()
+        --ngx_modules[]->ctx->init_conf()    
+                                        未配置的项采用默认值
+        --ngx_init_modules()            进一步初始化
+    ---------------单进程模式---------------
+    --ngx_single_process_cycle()
+        --ngx_modules[]->init_process() 模块儿进程级初始化(所有)
+    -----------master+worker模式------------
+    --ngx_master_process_cycle()
+        --ngx_start_worker_processes()
+            --ngx_worker_process_cycle()
+                --ngx_worker_process_init()
+                    --ngx_modules[]->init_process()
+#+END_EXAMPLE
+
 
 

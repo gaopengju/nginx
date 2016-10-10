@@ -83,7 +83,7 @@ ngx_str_t  ngx_http_html_default_types[] = {
 static ngx_command_t  ngx_http_commands[] = {
 
     { ngx_string("http"),
-      NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,
+      NGX_MAIN_CONF|NGX_CONF_BLOCK|NGX_CONF_NOARGS,  /* 设置了NGX_MAIN_CONF标识 */
       ngx_http_block,
       0,
       0,
@@ -115,7 +115,7 @@ ngx_module_t  ngx_http_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* NGX_MAIN_CONF标识变量的处理示例 */
 static char *
 ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -127,28 +127,23 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_http_core_loc_conf_t    *clcf;
     ngx_http_core_srv_conf_t   **cscfp;
     ngx_http_core_main_conf_t   *cmcf;
-
+    
+    /* 传入参数conf为'&(ngx_cycle_t->ctx[])'，而且尚未分配内存 */
     if (*(ngx_http_conf_ctx_t **) conf) {
         return "is duplicate";
     }
 
-    /* the main http context */
-
+    /* 分配内存，并赋值；the main http context */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
-
     *(ngx_http_conf_ctx_t **) conf = ctx;
 
 
-    /* count the number of the http modules and set up their indices */
-
+    /* 计数同类型NGX_HTTP_MODULE模块儿数，并分配其配置内存数组 */
     ngx_http_max_module = ngx_count_modules(cf->cycle, NGX_HTTP_MODULE);
-
-
     /* the http main_conf context, it is the same in the all http contexts */
-
     ctx->main_conf = ngx_pcalloc(cf->pool,
                                  sizeof(void *) * ngx_http_max_module);
     if (ctx->main_conf == NULL) {
@@ -160,7 +155,6 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * the http null srv_conf context, it is used to merge
      * the server{}s' srv_conf's
      */
-
     ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->srv_conf == NULL) {
         return NGX_CONF_ERROR;
@@ -171,7 +165,6 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * the http null loc_conf context, it is used to merge
      * the server{}s' loc_conf's
      */
-
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
@@ -181,8 +174,9 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     /*
      * create the main_conf's, the null srv_conf's, and the null loc_conf's
      * of the all http modules
+     *
+     * 同类型模块儿创建配置信息结构，分别对应http全局/server/location
      */
-
     for (m = 0; cf->cycle->modules[m]; m++) {
         if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -213,9 +207,13 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    /* <Bang!!!>pcf保存了原conf，以备后续恢复；后续，cf->ctx指向HTTP
+                的配置结构ngx_http_conf_ctx_t，再调用ngx_conf_parse()
+                时对应情况3 */
     pcf = *cf;
     cf->ctx = ctx;
 
+    /* 模块儿配置解析前处理 */
     for (m = 0; cf->cycle->modules[m]; m++) {
         if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -230,12 +228,10 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-    /* parse inside the http{} block */
-
+    /* 解析 http{} 配置 */
     cf->module_type = NGX_HTTP_MODULE;
     cf->cmd_type = NGX_HTTP_MAIN_CONF;
-    rv = ngx_conf_parse(cf, NULL);
-
+    rv = ngx_conf_parse(cf, NULL);               /* 递归，对应情况3 */
     if (rv != NGX_CONF_OK) {
         goto failed;
     }
@@ -243,8 +239,9 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     /*
      * init http{} main_conf's, merge the server{}s' srv_conf's
      * and its location{}s' loc_conf's
+     *
+     * 合并配置信息
      */
-
     cmcf = ctx->main_conf[ngx_http_core_module.ctx_index];
     cscfp = cmcf->servers.elts;
 
@@ -272,8 +269,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
 
-    /* create location trees */
-
+    /* 构建location树，为后续搜索加速；create location trees */
     for (s = 0; s < cmcf->servers.nelts; s++) {
 
         clcf = cscfp[s]->ctx->loc_conf[ngx_http_core_module.ctx_index];
@@ -288,15 +284,17 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
 
+    /* 初始化nginx的处理阶段数组 */
     if (ngx_http_init_phases(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
 
+    /* */
     if (ngx_http_init_headers_in_hash(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
 
-
+    /* 各HTTP模块儿配置解析后的处理 */
     for (m = 0; cf->cycle->modules[m]; m++) {
         if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -311,6 +309,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    /* <Bang!!!>变量初始化 */
     if (ngx_http_variables_init_vars(cf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -318,18 +317,19 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     /*
      * http{}'s cf->ctx was needed while the configuration merging
      * and in postconfiguration process
+     *
+     * http{}解析完毕，恢复环境
      */
-
     *cf = pcf;
 
 
+    /* <Bang!!!>初始化阶段处理句柄 */
     if (ngx_http_init_phase_handlers(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
 
 
     /* optimize the lists of ports, addresses and server names */
-
     if (ngx_http_optimize_servers(cf, cmcf, cmcf->ports) != NGX_OK) {
         return NGX_CONF_ERROR;
     }

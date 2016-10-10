@@ -48,8 +48,8 @@ struct ngx_cycle_s {
     ngx_connection_t         *free_connections;
     ngx_uint_t                free_connection_n;
 
-    ngx_module_t            **modules;
-    ngx_uint_t                modules_n;
+    ngx_module_t            **modules;        /* 本配置周期对应的模块儿信息，ngx_modules[]的副本 */
+    ngx_uint_t                modules_n;      /* 内置模块儿数，=ngx_modules_n */
     ngx_uint_t                modules_used;    /* unsigned  modules_used:1; */
 
     ngx_queue_t               reusable_connections_queue;
@@ -74,7 +74,7 @@ struct ngx_cycle_s {
     ngx_str_t                 conf_prefix;    /* 配置文件nginx.conf前置路径，-p参数 */
     ngx_str_t                 prefix;         /* 配置路径前缀，-p参数 */
     ngx_str_t                 lock_file;
-    ngx_str_t                 hostname;
+    ngx_str_t                 hostname;       /* 主机名，由gethostname()获得，等价于uname -n */
 };
 
 

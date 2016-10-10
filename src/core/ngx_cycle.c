@@ -32,7 +32,15 @@ ngx_uint_t             ngx_quiet_mode;        /* -q */
 static ngx_connection_t  dumb;
 /* STUB */
 
-
+/* 
+   解析配置主入口
+   nginx有三种启动模式
+    1)启动新的nginx
+    2)reload配置
+    3)热替换nginx代码
+   cycle就是周期的意思，对应一次启动过程；换句话说，不论发生了以上三种启
+   动方式的哪一种，nginx都会创建一个新的cycle与这次启动对应
+*/
 ngx_cycle_t *
 ngx_init_cycle(ngx_cycle_t *old_cycle)
 {
@@ -52,32 +60,27 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_core_module_t   *module;
     char                 hostname[NGX_MAXHOSTNAMELEN];
 
-    ngx_timezone_update();
-
-    /* force localtime update with a new timezone */
+    ngx_timezone_update();        /* 更新时区 */
 
     tp = ngx_timeofday();
     tp->sec = 0;
+    ngx_time_update();            /* 新时区下，强制更新缓存时间 */
 
-    ngx_time_update();
-
-
+    /* 分配新的cycle，并利用老cycle初始化，包括日志、配置文件、监听插口、共享内存等 */
     log = old_cycle->log;
-
     pool = ngx_create_pool(NGX_CYCLE_POOL_SIZE, log);
     if (pool == NULL) {
         return NULL;
     }
     pool->log = log;
-
     cycle = ngx_pcalloc(pool, sizeof(ngx_cycle_t));
     if (cycle == NULL) {
         ngx_destroy_pool(pool);
         return NULL;
     }
-
     cycle->pool = pool;
     cycle->log = log;
+    
     cycle->old_cycle = old_cycle;
 
     cycle->conf_prefix.len = old_cycle->conf_prefix.len;
@@ -182,23 +185,22 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->listening.pool = pool;
 
 
+    /* */
     ngx_queue_init(&cycle->reusable_connections_queue);
 
-
+    /* 分配模块儿配置指针，传说中的****阿！！！ */
     cycle->conf_ctx = ngx_pcalloc(pool, ngx_max_module * sizeof(void *));
     if (cycle->conf_ctx == NULL) {
         ngx_destroy_pool(pool);
         return NULL;
     }
 
-
+    /* 获取主机名，<===> 'uname -n' */
     if (gethostname(hostname, NGX_MAXHOSTNAMELEN) == -1) {
         ngx_log_error(NGX_LOG_EMERG, log, ngx_errno, "gethostname() failed");
         ngx_destroy_pool(pool);
         return NULL;
     }
-
-    /* on Linux gethostname() silently truncates name that does not fit */
 
     hostname[NGX_MAXHOSTNAMELEN - 1] = '\0';
     cycle->hostname.len = ngx_strlen(hostname);
@@ -211,13 +213,16 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     ngx_strlow(cycle->hostname.data, (u_char *) hostname, cycle->hostname.len);
 
-
+    /* 拷贝ngx_modules[]，当作本次解析周期的副本 */
     if (ngx_cycle_modules(cycle) != NGX_OK) {
         ngx_destroy_pool(pool);
         return NULL;
     }
 
-
+    /* 对于核心模块儿，创建配置环境内存；其余模块儿在解析期间创建，以节省内存(
+       配置文件中没有配置，则不创建；模块儿代码加载不代表使用，牛叉!!!)；
+       理解此处，需要了解ngx_cycle_s->****conf_ctx的内部构成，参考:
+       智能云-Openresty @ https://github.com/sqlfocus/work.git */
     for (i = 0; cycle->modules[i]; i++) {
         if (cycle->modules[i]->type != NGX_CORE_MODULE) {
             continue;
@@ -238,7 +243,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
     senv = environ;
 
-
+    /* 准备配置解析所需的内存 */
     ngx_memzero(&conf, sizeof(ngx_conf_t));
     /* STUB: init array ? */
     conf.args = ngx_array_create(pool, 10, sizeof(ngx_str_t));
@@ -264,13 +269,14 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 #if 0
     log->log_level = NGX_LOG_DEBUG_ALL;
 #endif
-
+    /* 解析-g参数传递的配置，略过 */
     if (ngx_conf_param(&conf) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
         return NULL;
     }
-
+    
+    /* <Bang!!!>解析配置 */
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
@@ -282,6 +288,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
                        cycle->conf_file.data);
     }
 
+    /* 设置用户未配置信息，默认值 */
     for (i = 0; cycle->modules[i]; i++) {
         if (cycle->modules[i]->type != NGX_CORE_MODULE) {
             continue;
@@ -301,6 +308,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
     }
 
+    /* 对于信号处理流程，解析完毕直接退出 */
     if (ngx_process == NGX_PROCESS_SIGNALLER) {
         return cycle;
     }

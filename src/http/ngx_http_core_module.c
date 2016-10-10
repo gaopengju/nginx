@@ -3080,20 +3080,24 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ngx_http_conf_ctx_t       *ctx, *pctx;
     ngx_http_core_loc_conf_t  *clcf, *pclcf;
 
+    /* location{}的结构和http{}一致 */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    /* main_conf/srv_conf不变，指向原结构，因为都已经到location内部了 */
     pctx = cf->ctx;
     ctx->main_conf = pctx->main_conf;
     ctx->srv_conf = pctx->srv_conf;
 
+    /* 分配location配置结构指针数组 */
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    /* 各模块儿创建配置结构 */
     for (i = 0; cf->cycle->modules[i]; i++) {
         if (cf->cycle->modules[i]->type != NGX_HTTP_MODULE) {
             continue;
@@ -3113,6 +3117,7 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     clcf = ctx->loc_conf[ngx_http_core_module.ctx_index];
     clcf->loc_conf = ctx->loc_conf;
 
+    /* 解析 */
     value = cf->args->elts;
 
     if (cf->args->nelts == 3) {
@@ -3249,12 +3254,15 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         return NGX_CONF_ERROR;
     }
 
+    /* 保存环境，利用新环境解析location{} */
     save = *cf;
     cf->ctx = ctx;
     cf->cmd_type = NGX_HTTP_LOC_CONF;
 
+    /* 递归，情形3 */
     rv = ngx_conf_parse(cf, NULL);
 
+    /* 恢复 */
     *cf = save;
 
     return rv;

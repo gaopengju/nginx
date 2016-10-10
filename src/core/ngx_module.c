@@ -5,6 +5,132 @@
  * Copyright (C) Nginx, Inc.
  */
 
+/*
+  以下代码由./configure生成，~/objs/ngx_modules.c，为摘录方便，copy到此
+  ngx_module_t *ngx_modules[] = {
+    &ngx_core_module,                       类型NGX_CORE_MODULE
+    &ngx_errlog_module,                     类型NGX_CORE_MODULE
+    &ngx_conf_module,
+    &ngx_openssl_module,                    类型NGX_CORE_MODULE
+    &ngx_regex_module,                      类型NGX_CORE_MODULE
+    &ngx_events_module,                     类型NGX_CORE_MODULE
+    &ngx_event_core_module,
+    &ngx_epoll_module,
+    &ngx_http_module,                       类型NGX_CORE_MODULE
+    &ngx_http_core_module,
+    &ngx_http_log_module,
+    &ngx_http_upstream_module,
+    &ngx_http_static_module,
+    &ngx_http_autoindex_module,
+    &ngx_http_index_module,
+    &ngx_http_auth_basic_module,
+    &ngx_http_access_module,
+    &ngx_http_limit_conn_module,
+    &ngx_http_limit_req_module,
+    &ngx_http_geo_module,
+    &ngx_http_map_module,
+    &ngx_http_split_clients_module,
+    &ngx_http_referer_module,
+    &ngx_http_rewrite_module,
+    &ngx_http_ssl_module,
+    &ngx_http_proxy_module,
+    &ngx_http_fastcgi_module,
+    &ngx_http_uwsgi_module,
+    &ngx_http_scgi_module,
+    &ngx_http_memcached_module,
+    &ngx_http_empty_gif_module,
+    &ngx_http_browser_module,
+    &ngx_http_upstream_hash_module,
+    &ngx_http_upstream_ip_hash_module,
+    &ngx_http_upstream_least_conn_module,
+    &ngx_http_upstream_keepalive_module,
+    &ngx_http_upstream_zone_module,
+    &ngx_http_write_filter_module,
+    &ngx_http_header_filter_module,
+    &ngx_http_chunked_filter_module,
+    &ngx_http_range_header_filter_module,
+    &ngx_http_gzip_filter_module,
+    &ngx_http_postpone_filter_module,
+    &ngx_http_ssi_filter_module,
+    &ngx_http_charset_filter_module,
+    &ngx_http_userid_filter_module,
+    &ngx_http_headers_filter_module,
+    &ngx_http_copy_filter_module,
+    &ngx_http_range_body_filter_module,
+    &ngx_http_not_modified_filter_module,
+    NULL
+  };
+  char *ngx_module_names[] = {
+    "ngx_core_module",
+    "ngx_errlog_module",
+    "ngx_conf_module",
+    "ngx_openssl_module",
+    "ngx_regex_module",
+    "ngx_events_module",
+    "ngx_event_core_module",
+    "ngx_epoll_module",
+    "ngx_http_module",
+    "ngx_http_core_module",
+    "ngx_http_log_module",
+    "ngx_http_upstream_module",
+    "ngx_http_static_module",
+    "ngx_http_autoindex_module",
+    "ngx_http_index_module",
+    "ngx_http_auth_basic_module",
+    "ngx_http_access_module",
+    "ngx_http_limit_conn_module",
+    "ngx_http_limit_req_module",
+    "ngx_http_geo_module",
+    "ngx_http_map_module",
+    "ngx_http_split_clients_module",
+    "ngx_http_referer_module",
+    "ngx_http_rewrite_module",
+    "ngx_http_ssl_module",
+    "ngx_http_proxy_module",
+    "ngx_http_fastcgi_module",
+    "ngx_http_uwsgi_module",
+    "ngx_http_scgi_module",
+    "ngx_http_memcached_module",
+    "ngx_http_empty_gif_module",
+    "ngx_http_browser_module",
+    "ngx_http_upstream_hash_module",
+    "ngx_http_upstream_ip_hash_module",
+    "ngx_http_upstream_least_conn_module",
+    "ngx_http_upstream_keepalive_module",
+    "ngx_http_upstream_zone_module",
+    "ndk_http_module",
+    "ngx_coolkit_module",
+    "ngx_http_set_misc_module",
+    "ngx_http_form_input_module",
+    "ngx_http_encrypted_session_module",
+    "ngx_http_lua_upstream_module",
+    "ngx_http_array_var_module",
+    "ngx_http_memc_module",
+    "ngx_http_redis_module",
+    "ngx_http_write_filter_module",
+    "ngx_http_header_filter_module",
+    "ngx_http_chunked_filter_module",
+    "ngx_http_range_header_filter_module",
+    "ngx_http_gzip_filter_module",
+    "ngx_http_postpone_filter_module",
+    "ngx_http_ssi_filter_module",
+    "ngx_http_charset_filter_module",
+    "ngx_http_userid_filter_module",
+    "ngx_http_headers_filter_module",
+    "ngx_http_iconv_module",
+    "ngx_http_echo_module",
+    "ngx_http_xss_filter_module",
+    "ngx_http_srcache_filter_module",
+    "ngx_http_lua_module",
+    "ngx_http_headers_more_filter_module",
+    "ngx_http_rds_json_filter_module",
+    "ngx_http_rds_csv_filter_module",
+    "ngx_http_copy_filter_module",
+    "ngx_http_range_body_filter_module",
+    "ngx_http_not_modified_filter_module",
+    NULL
+  };
+*/
 
 #include <ngx_config.h>
 #include <ngx_core.h>
@@ -18,8 +144,8 @@ static ngx_uint_t ngx_module_ctx_index(ngx_cycle_t *cycle, ngx_uint_t type,
     ngx_uint_t index);
 
 
-ngx_uint_t         ngx_max_module;
-static ngx_uint_t  ngx_modules_n;
+ngx_uint_t         ngx_max_module;           /* 模块儿数，内置 + 动态 */
+static ngx_uint_t  ngx_modules_n;            /* 内置的模块儿数 */
 
 
 ngx_int_t
@@ -27,12 +153,13 @@ ngx_preinit_modules(void)
 {
     ngx_uint_t  i;
 
+    /* ngx_modules[]数组由./configure生成，1.11.2版本的已经copy到此文件顶部； */
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = i;
         ngx_modules[i]->name = ngx_module_names[i];
     }
 
-    ngx_modules_n = i;
+    ngx_modules_n = i;                       /* 本版本动态模块儿数上限128 */
     ngx_max_module = ngx_modules_n + NGX_MAX_DYNAMIC_MODULES;
 
     return NGX_OK;
@@ -53,7 +180,7 @@ ngx_cycle_modules(ngx_cycle_t *cycle)
         return NGX_ERROR;
     }
 
-    ngx_memcpy(cycle->modules, ngx_modules,
+    ngx_memcpy(cycle->modules, ngx_modules,   /* 本次解析周期的副本 */
                ngx_modules_n * sizeof(ngx_module_t *));
 
     cycle->modules_n = ngx_modules_n;

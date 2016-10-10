@@ -48,7 +48,7 @@
         ...
         ngx_uint_t version;     当前模块儿版本号
 
-        void  *ctx;             指向当前模块儿特有的数据, 对应->type
+        void  *ctx;             指向当前模块儿特有数据的, 对应->type
                                 字段, 类型分别为
                                     ngx_core_module_t
                                     ngx_event_module_t

@@ -40,10 +40,10 @@ static ngx_conf_enum_t  ngx_debug_points[] = {
 static ngx_command_t  ngx_core_commands[] = {
 
     { ngx_string("daemon"),
-      NGX_MAIN_CONF|NGX_DIRECT_CONF|NGX_CONF_FLAG,
-      ngx_conf_set_flag_slot,
+      NGX_MAIN_CONF|NGX_DIRECT_CONF|NGX_CONF_FLAG,  /* 设置了NGX_DIRECT_CONF标识 */
+      ngx_conf_set_flag_slot,                       /* 处理句柄 */
       0,
-      offsetof(ngx_core_conf_t, daemon),
+      offsetof(ngx_core_conf_t, daemon),            /* 待设置变量在结构中的偏移 */
       NULL },
 
     { ngx_string("master_process"),
@@ -283,11 +283,12 @@ main(int argc, char *const *argv)
         return 1;
     }
 
+    /* 初始化模块儿名及默认序号，顺序由./configure生成的ngx_modules[]决定 */
     if (ngx_preinit_modules() != NGX_OK) {
         return 1;
     }
 
-    /* 解析配置 */
+    /* <Bang!!!>解析配置 */
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
         if (ngx_test_config) {
@@ -324,7 +325,7 @@ main(int argc, char *const *argv)
         return 0;
     }
 
-    /* 处理通过参数传入的信号 */
+    /* <Bang!!!>处理通过参数-s传入的信号 */
     if (ngx_signal) {
         return ngx_signal_process(cycle, ngx_signal);
     }
@@ -378,7 +379,7 @@ main(int argc, char *const *argv)
 
     ngx_use_stderr = 0;
 
-    /* 启动worker进程 */
+    /* <Bang!!!>启动worker进程 */
     if (ngx_process == NGX_PROCESS_SINGLE) {
         ngx_single_process_cycle(cycle);
 

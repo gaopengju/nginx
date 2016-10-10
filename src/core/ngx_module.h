@@ -235,21 +235,28 @@
 
 
 struct ngx_module_s {
-    ngx_uint_t            ctx_index;
-    ngx_uint_t            index;
-
-    char                 *name;
+    ngx_uint_t            ctx_index;   /* 同类型模块儿索引，如NGX_HTTP_MODULE类型的模块儿排序 */
+    ngx_uint_t            index;       /* 在ngx_modules[]数组中的索引 */
+    char                 *name;        /* 模块儿名，对应ngx_module_names[index] */
 
     ngx_uint_t            spare0;
     ngx_uint_t            spare1;
 
-    ngx_uint_t            version;
+    ngx_uint_t            version;     /* 当前模块儿版本号 */
     const char           *signature;
 
-    void                 *ctx;
-    ngx_command_t        *commands;
-    ngx_uint_t            type;
-
+    void                 *ctx;         /*  当前模块儿特有数据的, 对应->type字段, 
+                                           类型分别为
+                                             ngx_core_module_t
+                                             ngx_event_module_t
+                                             ngx_http_module_t
+                                           包含特定类型对应的环境函数指针等 */
+    ngx_command_t        *commands;    /* 配置项的处理函数数组, 间接指定了当前
+                                          模块儿可以解析的配置项 */
+    ngx_uint_t            type;        /* 模块儿类型
+                                            NGX_CORE_MODULE
+                                            NGX_EVENT_MODULE
+                                            NGX_HTTP_MODULE等 */
     ngx_int_t           (*init_master)(ngx_log_t *log);
 
     ngx_int_t           (*init_module)(ngx_cycle_t *cycle);
@@ -271,11 +278,11 @@ struct ngx_module_s {
     uintptr_t             spare_hook7;
 };
 
-
+/* NGX_CORE_MODULE类型模块儿的特定信息结构 */
 typedef struct {
-    ngx_str_t             name;
-    void               *(*create_conf)(ngx_cycle_t *cycle);
-    char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+    ngx_str_t             name;    /* 核心模块儿名，如http、core等 */
+    void               *(*create_conf)(ngx_cycle_t *cycle);           /* 创建配置结构 */
+    char               *(*init_conf)(ngx_cycle_t *cycle, void *conf); /* 配置解析完毕后，未设置的变量赋默认值 */
 } ngx_core_module_t;
 
 

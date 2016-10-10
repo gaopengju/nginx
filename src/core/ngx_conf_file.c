@@ -119,10 +119,10 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
     prev = NULL;
 #endif
 
+    /* 起始操作，打开配置文件 */
     if (filename) {
 
         /* open configuration file */
-
         fd = ngx_open_file(filename->data, NGX_FILE_RDONLY, NGX_FILE_OPEN, 0);
         if (fd == NGX_INVALID_FILE) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, ngx_errno,
@@ -159,7 +159,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         cf->conf_file->file.log = cf->log;
         cf->conf_file->line = 1;
 
-        type = parse_file;
+        type = parse_file;                /* 设置类型为解析文件 */
 
         if (ngx_dump_config
 #if (NGX_DEBUG)
@@ -196,15 +196,15 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
     } else if (cf->conf_file->file.fd != NGX_INVALID_FILE) {
 
-        type = parse_block;
+        type = parse_block;            /* 读取文件后，解析内存块儿 */
 
     } else {
-        type = parse_param;
+        type = parse_param;            /* -g参数 */
     }
 
-
+    /* 开始解析 */
     for ( ;; ) {
-        rc = ngx_conf_read_token(cf);
+        rc = ngx_conf_read_token(cf);  /* 读取关键字，token */
 
         /*
          * ngx_conf_read_token() may return
@@ -266,7 +266,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
             }
 
             rv = (*cf->handler)(cf, NULL, cf->handler_conf);
-            if (rv == NGX_CONF_OK) {
+            if (rv == NGX_CONF_OK) {        /* 指定的处理句柄 */
                 continue;
             }
 
@@ -280,7 +280,7 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
         }
 
 
-        rc = ngx_conf_handler(cf, rc);
+        rc = ngx_conf_handler(cf, rc);      /* 默认处理句柄 */
 
         if (rc == NGX_ERROR) {
             goto failed;
@@ -292,7 +292,7 @@ failed:
     rc = NGX_ERROR;
 
 done:
-
+    /* 解析完毕，释放缓存 */
     if (filename) {
         if (cf->conf_file->buffer->start) {
             ngx_free(cf->conf_file->buffer->start);
@@ -315,7 +315,7 @@ done:
     return NGX_CONF_OK;
 }
 
-
+/* 解析配置文件的默认处理句柄，非特别指定，一般都调用此函数 */
 static ngx_int_t
 ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 {
@@ -329,6 +329,9 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 
     found = 0;
 
+    /* 遍历所有模块儿，查找能够处理token的命令->commands;
+       一般情况下，配置文件格式为：key value，每一行调用
+       此函数一次 */
     for (i = 0; cf->cycle->modules[i]; i++) {
 
         cmd = cf->cycle->modules[i]->commands;
@@ -406,24 +409,63 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 }
             }
 
-            /* set up the directive's configuration context */
+            /* 查找对应此配置的配置结构，set up the directive's configuration context 
+               注意，情况1和情况2时，cf.ctx是由最外层的解析函数传递近来的，指向
+               ngx_cycle_t->conf_ctx：
+                 ngx_init_cycle()
+                   - 分配ngx_cycle_t，cycle
+                   - 分配cycle->conf_ctx
+                   - conf.ctx = cycle->conf_ctx
+                   - ngx_conf_parse(&conf, )
+                     - ngx_conf_handler(&conf)  对应参数cf 
 
+               对于情况3, 此时cf.ctx为配置结构的指针，即ngx_cycle_t->conf_ctx[]的值
+            */
             conf = NULL;
-
             if (cmd->type & NGX_DIRECT_CONF) {
+                /* 情况1: 只有核心模块儿NGX_CORE_MODULE对应的配置变量才可能有此
+                          标识；nginx内ngx_core_module模块儿的配置主要通过此方
+                          式获取存储位置
+                          
+                          此标识代表存储结构的指针直接放置在环境变量配置结构数组
+                          ngx_cycle_t->conf_ctx[]中；因此，直接解引用即可
+
+                          此时，ngx_cycle_t->conf_ctx实际是**结构；直接定义为
+                          ****是为兼容HTTP等模块儿的配置，它们都是4级引用 
+
+                          最终conf直接指向了待处理关键字token所在的结构体 
+
+                          典型示例：daemon ◎ ngx_core_module
+                */
                 conf = ((void **) cf->ctx)[cf->cycle->modules[i]->index];
-
             } else if (cmd->type & NGX_MAIN_CONF) {
+                /* 情况2: 核心模块儿的变量基本都有此标识，主要针对ngx_http_module
+                          、ngx_events_module、ngx_regex_module等模块儿等配置指令
+                          
+                          此时，这些模块儿还没有分配配置结构；
+
+                          最终conf为指向ngx_cycle_t->conf_ctx[]存储单元的指针，
+                          待后续函数分配存储结构，并赋值
+                          
+                          典型示例：http @ ngx_http_module
+                */
                 conf = &(((void **) cf->ctx)[cf->cycle->modules[i]->index]);
-
             } else if (cf->ctx) {
-                confp = *(void **) ((char *) cf->ctx + cmd->conf);
+                /* 情况3: 其他非核心模块儿的配置指令
+            
+                          此时cf指向对应的配置，ngx_cycle_t->conf_ctx[index]
+                          confp指向对应的同类型的配置结构数组
+                          conf指向最终的配置
 
+                          典型示例：
+                 */
+                confp = *(void **) ((char *) cf->ctx + cmd->conf);
                 if (confp) {
                     conf = confp[cf->cycle->modules[i]->ctx_index];
                 }
             }
 
+            /* 设置配置结构对应的值 */
             rv = cmd->set(cf, cmd, conf);
 
             if (rv == NGX_CONF_OK) {
@@ -979,24 +1021,26 @@ ngx_conf_log_error(ngx_uint_t level, ngx_conf_t *cf, ngx_err_t err,
                   cf->conf_file->file.name.data, cf->conf_file->line);
 }
 
-
+/* NGX_DIRECT_CONF标识变量的处理示例 */
 char *
 ngx_conf_set_flag_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    char  *p = conf;
+    char  *p = conf;              /* 配置结构体 */
 
     ngx_str_t        *value;
     ngx_flag_t       *fp;
     ngx_conf_post_t  *post;
 
-    fp = (ngx_flag_t *) (p + cmd->offset);
+    fp = (ngx_flag_t *) (p + cmd->offset);    /* 待配置变量 */
 
     if (*fp != NGX_CONF_UNSET) {
         return "is duplicate";
     }
 
+    /* 提取关键字token对应的值 */
     value = cf->args->elts;
 
+    /* 根据具体的含义设置值 */
     if (ngx_strcasecmp(value[1].data, (u_char *) "on") == 0) {
         *fp = 1;
 
@@ -1011,11 +1055,13 @@ ngx_conf_set_flag_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    /* 善后处理 */
     if (cmd->post) {
         post = cmd->post;
         return post->post_handler(cf, post, fp);
     }
 
+    /* 返回 */
     return NGX_CONF_OK;
 }
 
