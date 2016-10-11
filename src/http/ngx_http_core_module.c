@@ -2946,7 +2946,7 @@ ngx_http_get_forwarded_addr_internal(ngx_http_request_t *r, ngx_addr_t *addr,
     return NGX_DECLINED;
 }
 
-
+/* server{}环境解析处理入口 */
 static char *
 ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 {
@@ -2961,28 +2961,25 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ngx_http_core_srv_conf_t    *cscf, **cscfp;
     ngx_http_core_main_conf_t   *cmcf;
 
+    /* 分配server{}对应的配置上下文，递归解析时，会切换http{}到此上下文 */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
-    http_ctx = cf->ctx;
-    ctx->main_conf = http_ctx->main_conf;
-
-    /* the server{}'s srv_conf */
-
+    http_ctx = cf->ctx;                           /* 保存http{}上下文 */
+    ctx->main_conf = http_ctx->main_conf;         /* server{}中不分配main_conf
+                                                     回指父环境对应的配置 */
+    /* server{}环境中分配srv_conf/loc_conf配置结构；其中包括ngx_http_core_module
+       模块儿对应的srv_conf/loc_conf项 */
     ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->srv_conf == NULL) {
         return NGX_CONF_ERROR;
     }
-
-    /* the server{}'s loc_conf */
-
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
     }
-
     for (i = 0; cf->cycle->modules[i]; i++) {
         if (cf->cycle->modules[i]->type != NGX_HTTP_MODULE) {
             continue;
@@ -3010,32 +3007,33 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     }
 
 
-    /* the server configuration context */
-
+    /* server{}上下文对应的srv_conf[]指针数组中，ngx_http_core_module模块儿对应
+       的项，其对应的上下文环境指向新分配的server{}上下文 */
     cscf = ctx->srv_conf[ngx_http_core_module.ctx_index];
     cscf->ctx = ctx;
 
-
+    /* http{}上下文对应的main_conf[]指针数组，ngx_http_core_module模块儿对应的
+       配置结构中有一个变量servers[]；新分配的server{}上下文中的此模块儿的srv_conf
+       项的指针加入其中，以便追踪server{}配置信息 */
     cmcf = ctx->main_conf[ngx_http_core_module.ctx_index];
-
     cscfp = ngx_array_push(&cmcf->servers);
     if (cscfp == NULL) {
         return NGX_CONF_ERROR;
     }
-
     *cscfp = cscf;
 
 
-    /* parse inside server{} */
-
+    /* 切换上下文环境为server{}，递归解析 */
     pcf = *cf;
     cf->ctx = ctx;
     cf->cmd_type = NGX_HTTP_SRV_CONF;
 
     rv = ngx_conf_parse(cf, NULL);
 
+    /* 恢复上下文环境为http{} */
     *cf = pcf;
 
+    /* <Bang!!!>添加监听插口 */
     if (rv == NGX_CONF_OK && !cscf->listen) {
         ngx_memzero(&lsopt, sizeof(ngx_http_listen_opt_t));
 
@@ -3073,7 +3071,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     return rv;
 }
 
-
+/* location{}环境配置解析入口 */
 static char *
 ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 {
@@ -3087,7 +3085,7 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ngx_http_conf_ctx_t       *ctx, *pctx;
     ngx_http_core_loc_conf_t  *clcf, *pclcf;
 
-    /* location{}的结构和http{}一致 */
+    /* 分配location{}上下文环境，此结构体和http{}/server{}上下文环境结构一样 */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
@@ -3098,13 +3096,11 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     ctx->main_conf = pctx->main_conf;
     ctx->srv_conf = pctx->srv_conf;
 
-    /* 分配location配置结构指针数组 */
+    /* 各模块儿分配loc_conf配置结构指针数组 */
     ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
     if (ctx->loc_conf == NULL) {
         return NGX_CONF_ERROR;
     }
-
-    /* 各模块儿创建配置结构 */
     for (i = 0; cf->cycle->modules[i]; i++) {
         if (cf->cycle->modules[i]->type != NGX_HTTP_MODULE) {
             continue;
@@ -3121,12 +3117,13 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         }
     }
 
+    /* location{}上下文环境的loc_conf[]指针数组中，ngx_http_core_module模块儿
+       对应的项，其loc_conf指向loc_conf[]自身 */
     clcf = ctx->loc_conf[ngx_http_core_module.ctx_index];
     clcf->loc_conf = ctx->loc_conf;
 
     /* 解析 */
     value = cf->args->elts;
-
     if (cf->args->nelts == 3) {
 
         len = value[1].len;
@@ -3257,6 +3254,7 @@ ngx_http_core_location(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         }
     }
 
+    /* 加入server{}上下文环境loc_conf[]指针数组对应此模块儿项的loctions队列变量中 */
     if (ngx_http_add_location(cf, &pclcf->locations, clcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }

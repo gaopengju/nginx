@@ -6,7 +6,7 @@
 *文件* main():~/src/core/nginx.c
 
 * 时间缓存
-*函数* ngx_time_init()：~/src/core/ngx_times.c
+*函数* ~ngx_time_init()~ : =~/src/core/ngx_times.c=
 
 nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串格式；此设计使得
 少更新多读取的时间操作尤其高效。
@@ -15,12 +15,27 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 的粒度，造成紊乱。
 
 * 插口继承
-*函数* ngx_add_inherited_sockets():~/src/core/nginx.c
+*函数* =ngx_add_inherited_sockets()= :~/src/core/nginx.c
 
 启动nginx时，可通过环境变量NGINX继承已有的socket插口
 
 * 配置解析
-*函数* ngx_conf_parse():~/src/core/ngx_conf_file.c
+  - 入口函数           :: =ngx_conf_parse():~/src/core/ngx_conf_file.c=
+  - http{}入口函数     :: =ngx_http_block():~/src/http/ngx_http.c=
+  - server{}入口函数   :: =ngx_http_core_server():~/src/http/ngx_http_core_module.c=
+  - location{}入口函数 :: =ngx_http_core_location():~/src/http/ngx_http_core_module.c=
+
+#+CAPTION: 四级指针视图
+[[file:ngx_http_module-http{}.png]]
+
+#+CAPTION: SERVER上下文视图
+[[file:ngx_http_core_module-server{}.png]]
+
+#+CAPTION: LOCATION上下文视图
+[[file:ngx_http_core_module-location{}.png]]
+
+#+CAPTION: location优化后视图
+[[file:ngx_http_core_module-loc_conf-optimization.png]]
 
 * 模块儿初始化流程
 #+BEGIN_EXAMPLE
