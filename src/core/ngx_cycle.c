@@ -1007,7 +1007,7 @@ ngx_delete_pidfile(ngx_cycle_t *cycle)
     }
 }
 
-
+/* -s信号处理入口 */
 ngx_int_t
 ngx_signal_process(ngx_cycle_t *cycle, char *sig)
 {
@@ -1023,7 +1023,7 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
 
     ngx_memzero(&file, sizeof(ngx_file_t));
 
-    file.name = ccf->pid;
+    file.name = ccf->pid;      /* 获取主进程PID存放的文件名，由pid配置指定 */
     file.log = cycle->log;
 
     file.fd = ngx_open_file(file.name.data, NGX_FILE_RDONLY,
@@ -1048,7 +1048,7 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
 
     while (n-- && (buf[n] == CR || buf[n] == LF)) { /* void */ }
 
-    pid = ngx_atoi(buf, ++n);
+    pid = ngx_atoi(buf, ++n);  /* 获取主进程PID号 */
 
     if (pid == (ngx_pid_t) NGX_ERROR) {
         ngx_log_error(NGX_LOG_ERR, cycle->log, 0,
@@ -1057,8 +1057,8 @@ ngx_signal_process(ngx_cycle_t *cycle, char *sig)
         return 1;
     }
 
+    /* 处理信号主入口 */
     return ngx_os_signal_process(cycle, sig, pid);
-
 }
 
 

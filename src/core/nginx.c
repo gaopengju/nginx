@@ -177,7 +177,7 @@ static ngx_uint_t   ngx_show_configure; /* -V */
 static u_char      *ngx_prefix;         /* -p，工作路径 */
 static u_char      *ngx_conf_file;      /* -c，指定配置文件 */
 static u_char      *ngx_conf_params;    /* -g，命令行指定的配置信息 */
-static char        *ngx_signal;         /* */
+static char        *ngx_signal;         /* 目前支持"stop"/"quit"/"reopen"/"reload" */
 
 
 static char **ngx_os_environ;           /* C语言环境environ变量指针 */
@@ -343,7 +343,7 @@ main(int argc, char *const *argv)
     }
 
 #if !(NGX_WIN32)
-    /* 设置信号处理句柄 */
+    /* 根据signals[]数组，设置信号处理句柄 */
     if (ngx_init_signals(cycle->log) != NGX_OK) {
         return 1;
     }

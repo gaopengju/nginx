@@ -32,22 +32,22 @@ ngx_uint_t    ngx_process;           /* 进程角色，NGX_PROCESS_*等，定义
 ngx_uint_t    ngx_worker;
 ngx_pid_t     ngx_pid;               /* 主进程PID */
 
-sig_atomic_t  ngx_reap;
-sig_atomic_t  ngx_sigio;
-sig_atomic_t  ngx_sigalrm;
-sig_atomic_t  ngx_terminate;
-sig_atomic_t  ngx_quit;
-sig_atomic_t  ngx_debug_quit;
-ngx_uint_t    ngx_exiting;
-sig_atomic_t  ngx_reconfigure;
-sig_atomic_t  ngx_reopen;
+sig_atomic_t  ngx_reap;              /* SIGQUIT */
+sig_atomic_t  ngx_sigio;             /* SIGIO */
+sig_atomic_t  ngx_sigalrm;           /* SIGALARM */
+sig_atomic_t  ngx_terminate;         /* SIGTERM */
+sig_atomic_t  ngx_quit;              /* SIGQUIT */
+sig_atomic_t  ngx_debug_quit;        /* */
+ngx_uint_t    ngx_exiting;           /* */
+sig_atomic_t  ngx_reconfigure;       /* SIGHUP */
+sig_atomic_t  ngx_reopen;            /* SIGUSR1 */
 
-sig_atomic_t  ngx_change_binary;
+sig_atomic_t  ngx_change_binary;     /* SIGUSR2 */
 ngx_pid_t     ngx_new_binary;
 ngx_uint_t    ngx_inherited;         /* =1, 表示通过环境变量NGINX继承来插口fd */
 ngx_uint_t    ngx_daemonized;
 
-sig_atomic_t  ngx_noaccept;
+sig_atomic_t  ngx_noaccept;          /* SIGWINCH */
 ngx_uint_t    ngx_noaccepting;
 ngx_uint_t    ngx_restart;
 

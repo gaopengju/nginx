@@ -33,9 +33,9 @@ char           **ngx_os_argv;             /* main()的参数argv指针 */
 ngx_int_t        ngx_process_slot;
 ngx_socket_t     ngx_channel;
 ngx_int_t        ngx_last_process;
-ngx_process_t    ngx_processes[NGX_MAX_PROCESSES];
+ngx_process_t    ngx_processes[NGX_MAX_PROCESSES];     /* 记录进程信息 */
 
-
+/* 对应-s命令行参数，信号处理函数 */
 ngx_signal_t  signals[] = {
     { ngx_signal_value(NGX_RECONFIGURE_SIGNAL),
       "SIG" ngx_value(NGX_RECONFIGURE_SIGNAL),
@@ -279,7 +279,7 @@ ngx_execute_proc(ngx_cycle_t *cycle, void *data)
     exit(1);
 }
 
-
+/* 设置处理句柄 */
 ngx_int_t
 ngx_init_signals(ngx_log_t *log)
 {
@@ -305,7 +305,7 @@ ngx_init_signals(ngx_log_t *log)
     return NGX_OK;
 }
 
-
+/* 进程所有信号处理句柄入口，由signals[]指定；设置全局变量，待主进程循环处理 */
 void
 ngx_signal_handler(int signo)
 {
@@ -324,13 +324,13 @@ ngx_signal_handler(int signo)
         }
     }
 
-    ngx_time_sigsafe_update();
+    ngx_time_sigsafe_update();              /* 更新时间缓存 */
 
     action = "";
 
     switch (ngx_process) {
 
-    case NGX_PROCESS_MASTER:
+    case NGX_PROCESS_MASTER:                /* 主进程信号处理 */
     case NGX_PROCESS_SINGLE:
         switch (signo) {
 
@@ -396,7 +396,7 @@ ngx_signal_handler(int signo)
 
         break;
 
-    case NGX_PROCESS_WORKER:
+    case NGX_PROCESS_WORKER:                /* worker/cache进程信号处理 */
     case NGX_PROCESS_HELPER:
         switch (signo) {
 
@@ -441,14 +441,14 @@ ngx_signal_handler(int signo)
                       "before either old or new binary's process");
     }
 
-    if (signo == SIGCHLD) {
+    if (signo == SIGCHLD) {                 /* SIGCHLD处理 */
         ngx_process_get_status();
     }
 
     ngx_set_errno(err);
 }
 
-
+/* SIGCHILD信号处理入口，回收资源，避免僵尸；并通知其他进程，关闭通信通道 */
 static void
 ngx_process_get_status(void)
 {
@@ -462,7 +462,7 @@ ngx_process_get_status(void)
     one = 0;
 
     for ( ;; ) {
-        pid = waitpid(-1, &status, WNOHANG);
+        pid = waitpid(-1, &status, WNOHANG);      /* 回收资源 */
 
         if (pid == 0) {
             return;
@@ -503,7 +503,7 @@ ngx_process_get_status(void)
         one = 1;
         process = "unknown process";
 
-        for (i = 0; i < ngx_last_process; i++) {
+        for (i = 0; i < ngx_last_process; i++) {  /* 更新全局信息 */
             if (ngx_processes[i].pid == pid) {
                 ngx_processes[i].status = status;
                 ngx_processes[i].exited = 1;
@@ -512,7 +512,7 @@ ngx_process_get_status(void)
             }
         }
 
-        if (WTERMSIG(status)) {
+        if (WTERMSIG(status)) {                   /* 根据不同情况记录日志 */
 #ifdef WCOREDUMP
             ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, 0,
                           "%s %P exited on signal %d%s",
@@ -535,7 +535,7 @@ ngx_process_get_status(void)
                           "%s %P exited with fatal code %d "
                           "and cannot be respawned",
                           process, pid, WEXITSTATUS(status));
-            ngx_processes[i].respawn = 0;
+            ngx_processes[i].respawn = 0;        /* fatal错误，不再重启 */
         }
 
         ngx_unlock_mutexes(pid);
@@ -609,12 +609,12 @@ ngx_debug_point(void)
     }
 }
 
-
+/* 处理命令行参数-s传递的信号，直接通过kill发送信号 */
 ngx_int_t
 ngx_os_signal_process(ngx_cycle_t *cycle, char *name, ngx_pid_t pid)
 {
     ngx_signal_t  *sig;
-
+    
     for (sig = signals; sig->signo != 0; sig++) {
         if (ngx_strcmp(name, sig->name) == 0) {
             if (kill(pid, sig->signo) != -1) {
