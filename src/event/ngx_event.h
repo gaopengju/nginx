@@ -451,7 +451,7 @@ typedef struct {
     void                 *(*create_conf)(ngx_cycle_t *cycle);
     char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
 
-    ngx_event_actions_t     actions;
+    ngx_event_actions_t     actions;     /* 事件处理句柄结构 */
 } ngx_event_module_t;
 
 

@@ -49,12 +49,12 @@ ngx_atomic_t         *ngx_connection_counter = &connection_counter;
 
 
 ngx_atomic_t         *ngx_accept_mutex_ptr;
-ngx_shmtx_t           ngx_accept_mutex;
-ngx_uint_t            ngx_use_accept_mutex;
+ngx_shmtx_t           ngx_accept_mutex;          /* 多worker进程共享内存锁 */
+ngx_uint_t            ngx_use_accept_mutex;      /* 多worker进程时=1, 用于accept，防止惊群 */
 ngx_uint_t            ngx_accept_events;
 ngx_uint_t            ngx_accept_mutex_held;
 ngx_msec_t            ngx_accept_mutex_delay;
-ngx_int_t             ngx_accept_disabled;
+ngx_int_t             ngx_accept_disabled;       /* = ngx_cycle_t->connection_n / 8, 用于平衡进程间负载 */
 
 
 #if (NGX_STAT_STUB)
@@ -196,6 +196,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     ngx_uint_t  flags;
     ngx_msec_t  timer, delta;
 
+    /* 定时器相关 */
     if (ngx_timer_resolution) {
         timer = NGX_TIMER_INFINITE;
         flags = 0;
@@ -216,11 +217,13 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     }
 
     /* <Bang!!!>ACCEPT并发锁，避免多进程竞争导致的惊群现象 */
-    if (ngx_use_accept_mutex) {
+    if (ngx_use_accept_mutex) {           /* 多个worker进程时，此变量为1 */
+        /* 如果ngx_accept_disabled有值, 则不主动获取锁, 此值在ngx_event_accept()
+           函数设置, 表示当前进程的繁忙程度; 如果繁忙, 则不再接受请求 */
         if (ngx_accept_disabled > 0) {
             ngx_accept_disabled--;
-
         } else {
+            /* 接受accept前，加锁 */
             if (ngx_trylock_accept_mutex(cycle) == NGX_ERROR) {
                 return;
             }
@@ -240,24 +243,29 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     delta = ngx_current_msec;
 
-    /**/
+    /*处理事件, 加入对应的队列, ngx_posted_accept_events或ngx_posted_events, 
+      然后迅速返回*/
     (void) ngx_process_events(cycle, timer, flags);
 
     delta = ngx_current_msec - delta;
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "timer delta: %M", delta);
-    /**/
+    /* 处理队列ngx_posted_accept_events，accpet事件，加锁中 */
     ngx_event_process_posted(cycle, &ngx_posted_accept_events);
 
+    /* 释放锁；事件处理分优先级, ACCEPT需要加锁操作; 其余的读、写事件则
+       不需要加锁, 解锁后操作; 以最大限度提高并行度 */
     if (ngx_accept_mutex_held) {
         ngx_shmtx_unlock(&ngx_accept_mutex);
     }
 
+    /* 处理定时器事件 */
     if (delta) {
         ngx_event_expire_timers();
     }
-    /**/
+    
+    /* 处理队列ngx_posted_events */
     ngx_event_process_posted(cycle, &ngx_posted_events);
 }
 

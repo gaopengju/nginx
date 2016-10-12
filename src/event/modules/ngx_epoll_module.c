@@ -129,9 +129,9 @@ static void ngx_epoll_eventfd_handler(ngx_event_t *ev);
 static void *ngx_epoll_create_conf(ngx_cycle_t *cycle);
 static char *ngx_epoll_init_conf(ngx_cycle_t *cycle, void *conf);
 
-static int                  ep = -1;
-static struct epoll_event  *event_list;
-static ngx_uint_t           nevents;
+static int                  ep = -1;              /* epoll描述符句柄 */
+static struct epoll_event  *event_list;           /* 监听事件列表 */
+static ngx_uint_t           nevents;              /* event_list元素个数 */
 
 #if (NGX_HAVE_EVENTFD)
 static int                  notify_fd = -1;
@@ -772,7 +772,7 @@ ngx_epoll_notify(ngx_event_handler_pt handler)
 
 #endif
 
-
+/* EPOLL模型的事件处理入口 */
 static ngx_int_t
 ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 {
@@ -789,7 +789,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "epoll timer: %M", timer);
-
+    /* EPOLL监听指定的事件 */
     events = epoll_wait(ep, event_list, (int) nevents, timer);
 
     err = (events == -1) ? ngx_errno : 0;
@@ -825,7 +825,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                       "epoll_wait() returned no events without timeout");
         return NGX_ERROR;
     }
-
+    /* 处理监听事件 */
     for (i = 0; i < events; i++) {
         c = event_list[i].data.ptr;
 
@@ -889,7 +889,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 #endif
 
             rev->ready = 1;
-
+            /* 根据事件类型，放入不同队列 */
             if (flags & NGX_POST_EVENTS) {
                 queue = rev->accept ? &ngx_posted_accept_events
                                     : &ngx_posted_events;

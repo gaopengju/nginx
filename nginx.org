@@ -76,3 +76,8 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 *入口函数* =ngx_worker_process_cycle():~/src/os/unix/ngx_process_cycle.c=
 
 
+* 高速IO模型
+*入口函数* =ngx_process_events_and_timers():~/src/event/ngx_event.c=
+
+
+
