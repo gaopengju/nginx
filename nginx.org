@@ -60,7 +60,7 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
                 -- 调用命令->set()
         --ngx_modules[]->ctx->init_conf()    
                                         未配置的项采用默认值
-        --ngx_init_modules()            进一步初始化
+        --ngx_init_modules()            模块儿启动前的特殊准备，主要针对集成的第三方
     ---------------单进程模式---------------
     --ngx_single_process_cycle()
         --ngx_modules[]->init_process() 模块儿进程级初始化(所有)
@@ -69,8 +69,10 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
         --ngx_start_worker_processes()
             --ngx_worker_process_cycle()
                 --ngx_worker_process_init()
-                    --ngx_modules[]->init_process()
+                    --ngx_modules[]->init_process()   ~/src/os/unix/ngx_process_cycle.c
 #+END_EXAMPLE
 
+* worker进程
+*入口函数* =ngx_worker_process_cycle():~/src/os/unix/ngx_process_cycle.c=
 
 

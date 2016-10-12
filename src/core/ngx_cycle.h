@@ -95,23 +95,23 @@ typedef struct {
 
     ngx_msec_t                timer_resolution;
 
-    ngx_int_t                 worker_processes;
+    ngx_int_t                 worker_processes;   /* 配置worker_processes，worker进程数 */
     ngx_int_t                 debug_points;
 
-    ngx_int_t                 rlimit_nofile;
-    off_t                     rlimit_core;
+    ngx_int_t                 rlimit_nofile;      /* 配置worker_rlimit_nofile，worker进程允许打开的fd上限 */
+    off_t                     rlimit_core;        /* 配置worker_rlimit_core，core文件大小上限；0表示不创建core文件 */
 
-    int                       priority;
+    int                       priority;           /* 配置worker_priority，worker进程调度优先级 */
 
-    ngx_uint_t                cpu_affinity_auto;
-    ngx_uint_t                cpu_affinity_n;
-    ngx_cpuset_t             *cpu_affinity;
+    ngx_uint_t                cpu_affinity_auto;  /* 配置worker_cpu_affinity auto，自动设置cpu亲昵性*/
+    ngx_uint_t                cpu_affinity_n;     /* cpu_affinity[]数组大小 */
+    ngx_cpuset_t             *cpu_affinity;       /* 配置worker_cpu_affinity，cpu亲昵性*/
 
     char                     *username;
     ngx_uid_t                 user;
     ngx_gid_t                 group;
 
-    ngx_str_t                 working_directory;
+    ngx_str_t                 working_directory;  /* 配置working_directory，worker进程执行路径 */
     ngx_str_t                 lock_file;
 
     ngx_str_t                 pid;      /* nginx.conf的pid指令指定的文件路径 */

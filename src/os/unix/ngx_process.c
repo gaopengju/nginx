@@ -30,8 +30,8 @@ int              ngx_argc;                /* main()的参数argc */
 char           **ngx_argv;                /* 分配内存，拷贝argv[] */
 char           **ngx_os_argv;             /* main()的参数argv指针 */
 
-ngx_int_t        ngx_process_slot;
-ngx_socket_t     ngx_channel;
+ngx_int_t        ngx_process_slot;                     /* 当前worker进程的槽位 */
+ngx_socket_t     ngx_channel;                          /* 当前worker进程的管道fd */
 ngx_int_t        ngx_last_process;
 ngx_process_t    ngx_processes[NGX_MAX_PROCESSES];     /* 记录进程信息 */
 
@@ -91,6 +91,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
     ngx_pid_t  pid;
     ngx_int_t  s;
 
+    /* 查找空闲槽位，记录进程信息；通过fork，worker也会继承此块儿内存 */
     if (respawn >= 0) {
         s = respawn;
 
@@ -100,8 +101,8 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
                 break;
             }
         }
-
-        if (s == NGX_MAX_PROCESSES) {
+ 
+        if (s == NGX_MAX_PROCESSES) {       /* 最多启动1024个worker进程 */
             ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,
                           "no more than %d processes can be spawned",
                           NGX_MAX_PROCESSES);
@@ -109,11 +110,9 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
         }
     }
 
-
+    /* 构建和主进程的通信管道 */
     if (respawn != NGX_PROCESS_DETACHED) {
-
         /* Solaris 9 still has no AF_LOCAL */
-
         if (socketpair(AF_UNIX, SOCK_STREAM, 0, ngx_processes[s].channel) == -1)
         {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
@@ -182,7 +181,7 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
 
     ngx_process_slot = s;
 
-
+    /* 终于fork了 */
     pid = fork();
 
     switch (pid) {
@@ -193,17 +192,17 @@ ngx_spawn_process(ngx_cycle_t *cycle, ngx_spawn_proc_pt proc, void *data,
         ngx_close_channel(ngx_processes[s].channel, cycle->log);
         return NGX_INVALID_PID;
 
-    case 0:
+    case 0:            /* worker进程代码，不返回 */
         ngx_pid = ngx_getpid();
-        proc(cycle, data);
+        proc(cycle, data);           /* proc = ngx_worker_process_cycle() */
         break;
 
     default:
         break;
     }
 
+    /* 主进程记录worker进程信息 */
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "start %s %P", name, pid);
-
     ngx_processes[s].pid = pid;
     ngx_processes[s].exited = 0;
 

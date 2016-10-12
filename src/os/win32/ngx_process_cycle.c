@@ -30,7 +30,7 @@ static ngx_thread_value_t __stdcall ngx_cache_loader_thread(void *data);
 
 ngx_uint_t     ngx_process;
 ngx_uint_t     ngx_worker;
-ngx_pid_t      ngx_pid;
+ngx_pid_t      ngx_pid;                    /* 当前worker进程的PID */
 
 ngx_uint_t     ngx_inherited;
 ngx_pid_t      ngx_new_binary;

@@ -954,7 +954,7 @@ ngx_create_pidfile(ngx_str_t *name, ngx_log_t *log)
     ngx_file_t  file;
     u_char      pid[NGX_INT64_LEN + 2];
 
-    if (ngx_process > NGX_PROCESS_MASTER) {
+    if (ngx_process > NGX_PROCESS_MASTER) {     /* 只保存主进程PID */
         return NGX_OK;
     }
 

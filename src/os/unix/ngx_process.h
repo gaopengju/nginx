@@ -20,17 +20,19 @@ typedef pid_t       ngx_pid_t;
 typedef void (*ngx_spawn_proc_pt) (ngx_cycle_t *cycle, void *data);
 
 typedef struct {
-    ngx_pid_t           pid;
+    ngx_pid_t           pid;              /* 进程ID */
     int                 status;           /* waitpid()的返回值 */
-    ngx_socket_t        channel[2];
+    ngx_socket_t        channel[2];       /* 进程间通信的管道
+                                             worker[1] -- master[0]
+                                             worker[0] -- other worker[1] */
 
-    ngx_spawn_proc_pt   proc;
-    void               *data;
+    ngx_spawn_proc_pt   proc;             /* 进程入口函数 */
+    void               *data;             /* 进程私有信息; 对于worker为启动index，即0~ngx_core_conf_t->worker_processes */
     char               *name;             /* 进程名 */
-
+    
     unsigned            respawn:1;        /* 进程退出后是否自动重启 */
     unsigned            just_spawn:1;
-    unsigned            detached:1;
+    unsigned            detached:1;       /* 脱离跟踪，不和主进程及其他进程建通信管道 */
     unsigned            exiting:1;
     unsigned            exited:1;         /* 0/1, 是否已经退出 */
 } ngx_process_t;

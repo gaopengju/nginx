@@ -189,7 +189,7 @@ ngx_module_t  ngx_event_core_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* <TAKE CARE!!!>worker高速IO模型入口 */
 void
 ngx_process_events_and_timers(ngx_cycle_t *cycle)
 {
@@ -215,6 +215,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 #endif
     }
 
+    /* <Bang!!!>ACCEPT并发锁，避免多进程竞争导致的惊群现象 */
     if (ngx_use_accept_mutex) {
         if (ngx_accept_disabled > 0) {
             ngx_accept_disabled--;
@@ -239,13 +240,14 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
 
     delta = ngx_current_msec;
 
+    /**/
     (void) ngx_process_events(cycle, timer, flags);
 
     delta = ngx_current_msec - delta;
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "timer delta: %M", delta);
-
+    /**/
     ngx_event_process_posted(cycle, &ngx_posted_accept_events);
 
     if (ngx_accept_mutex_held) {
@@ -255,7 +257,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     if (delta) {
         ngx_event_expire_timers();
     }
-
+    /**/
     ngx_event_process_posted(cycle, &ngx_posted_events);
 }
 

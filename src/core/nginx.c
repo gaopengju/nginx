@@ -330,6 +330,7 @@ main(int argc, char *const *argv)
         return ngx_signal_process(cycle, ngx_signal);
     }
 
+    /* 打印系统信息 */
     ngx_os_status(cycle->log);
 
     /* 保存配置信息 */
@@ -1290,6 +1291,8 @@ ngx_set_priority(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static char *
 ngx_set_cpu_affinity(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
+    /* 格式： worker_cpu_affinity 0001 0010 0100 10000; 或
+              worker_cpu_affinity auto */
 #if (NGX_HAVE_CPU_AFFINITY)
     ngx_core_conf_t  *ccf = conf;
 
@@ -1301,7 +1304,7 @@ ngx_set_cpu_affinity(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     if (ccf->cpu_affinity) {
         return "is duplicate";
     }
-
+    /* 分配内存 */
     mask = ngx_palloc(cf->pool, (cf->args->nelts - 1) * sizeof(ngx_cpuset_t));
     if (mask == NULL) {
         return NGX_CONF_ERROR;
@@ -1312,6 +1315,7 @@ ngx_set_cpu_affinity(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     value = cf->args->elts;
 
+    /* 参数为auto等情况，所有CPU加入到mask[0] */
     if (ngx_strcmp(value[1].data, "auto") == 0) {
 
         if (cf->args->nelts > 3) {
@@ -1334,6 +1338,7 @@ ngx_set_cpu_affinity(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         n = 1;
     }
 
+    /* 非auto到情况 */
     for ( /* void */ ; n < cf->args->nelts; n++) {
 
         if (value[n].len > CPU_SETSIZE) {
@@ -1398,10 +1403,13 @@ ngx_get_cpu_affinity(ngx_uint_t n)
     ccf = (ngx_core_conf_t *) ngx_get_conf(ngx_cycle->conf_ctx,
                                            ngx_core_module);
 
+    /* 未设置亲昵性 */
     if (ccf->cpu_affinity == NULL) {
         return NULL;
     }
 
+    /* 设置了auto属性的亲昵性，1~n的CPU绑定前n-1个worker进程，其余的
+       所有worker进程绑定到0号cpu  */
     if (ccf->cpu_affinity_auto) {
         mask = &ccf->cpu_affinity[ccf->cpu_affinity_n - 1];
 
@@ -1425,6 +1433,7 @@ ngx_get_cpu_affinity(ngx_uint_t n)
         return &result;
     }
 
+    /* 非auto属性的，按照设置绑定到指定的CPU；未设置的部分，绑定到最后一颗CPU */
     if (ccf->cpu_affinity_n > n) {
         return &ccf->cpu_affinity[n];
     }

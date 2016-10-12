@@ -29,8 +29,8 @@ static void ngx_cache_loader_process_handler(ngx_event_t *ev);
 
 
 ngx_uint_t    ngx_process;           /* 进程角色，NGX_PROCESS_*等，定义在ngx_process_cycle.h */
-ngx_uint_t    ngx_worker;
-ngx_pid_t     ngx_pid;               /* 主进程PID */
+ngx_uint_t    ngx_worker;            /* 启动index，即启动for()循环的0~n */
+ngx_pid_t     ngx_pid;               /* 当前进程PID */
 
 sig_atomic_t  ngx_reap;              /* SIGQUIT */
 sig_atomic_t  ngx_sigio;             /* SIGIO */
@@ -45,7 +45,7 @@ sig_atomic_t  ngx_reopen;            /* SIGUSR1 */
 sig_atomic_t  ngx_change_binary;     /* SIGUSR2 */
 ngx_pid_t     ngx_new_binary;
 ngx_uint_t    ngx_inherited;         /* =1, 表示通过环境变量NGINX继承来插口fd */
-ngx_uint_t    ngx_daemonized;
+ngx_uint_t    ngx_daemonized;        /* =1, 表示进程精灵化 */
 
 sig_atomic_t  ngx_noaccept;          /* SIGWINCH */
 ngx_uint_t    ngx_noaccepting;
@@ -68,7 +68,7 @@ static ngx_cycle_t      ngx_exit_cycle;
 static ngx_log_t        ngx_exit_log;
 static ngx_open_file_t  ngx_exit_log_file;
 
-
+/* 启动worker进程工作入口 */
 void
 ngx_master_process_cycle(ngx_cycle_t *cycle)
 {
@@ -84,6 +84,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     ngx_listening_t   *ls;
     ngx_core_conf_t   *ccf;
 
+    /* 启动期间屏蔽信号 */
     sigemptyset(&set);
     sigaddset(&set, SIGCHLD);
     sigaddset(&set, SIGALRM);
@@ -95,48 +96,43 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     sigaddset(&set, ngx_signal_value(NGX_TERMINATE_SIGNAL));
     sigaddset(&set, ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
     sigaddset(&set, ngx_signal_value(NGX_CHANGEBIN_SIGNAL));
-
     if (sigprocmask(SIG_BLOCK, &set, NULL) == -1) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "sigprocmask() failed");
     }
-
     sigemptyset(&set);
 
-
+    /* 保存argv[][]，并设置程序名 */
     size = sizeof(master_process);
-
     for (i = 0; i < ngx_argc; i++) {
         size += ngx_strlen(ngx_argv[i]) + 1;
     }
-
     title = ngx_pnalloc(cycle->pool, size);
     if (title == NULL) {
         /* fatal */
         exit(2);
     }
-
     p = ngx_cpymem(title, master_process, sizeof(master_process) - 1);
     for (i = 0; i < ngx_argc; i++) {
         *p++ = ' ';
         p = ngx_cpystrn(p, (u_char *) ngx_argv[i], size);
     }
-
     ngx_setproctitle(title);
 
-
+    /* <Bang!!!>启动worker进程，设置标识“死后重启”；worker进程不再执行后续代码 */
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-
     ngx_start_worker_processes(cycle, ccf->worker_processes,
                                NGX_PROCESS_RESPAWN);
+    
+    /* <Bang!!!>启动cache管理进程 */
     ngx_start_cache_manager_processes(cycle, 0);
 
+    /* 后续master进程 */
     ngx_new_binary = 0;
     delay = 0;
     sigio = 0;
     live = 1;
-
-    for ( ;; ) {
+    for ( ;; ) {                               /* 主进程死循环 */
         if (delay) {
             if (ngx_sigalrm) {
                 sigio = 0;
@@ -158,10 +154,11 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             }
         }
 
+        /* 去除信号屏蔽，阻塞并等待信号发生 */
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "sigsuspend");
-
         sigsuspend(&set);
 
+        /* 后续为信号处理流程 */
         ngx_time_update();
 
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
@@ -340,7 +337,7 @@ ngx_single_process_cycle(ngx_cycle_t *cycle)
     }
 }
 
-
+/* 启动worker进程的入口函数 */
 static void
 ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
 {
@@ -354,14 +351,14 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
     ch.command = NGX_CMD_OPEN_CHANNEL;
 
     for (i = 0; i < n; i++) {
-
+        /* 启动worker进程 */
         ngx_spawn_process(cycle, ngx_worker_process_cycle,
                           (void *) (intptr_t) i, "worker process", type);
 
+        /* 通知其他worker有新worker进程加入 */
         ch.pid = ngx_processes[ngx_process_slot].pid;
         ch.slot = ngx_process_slot;
         ch.fd = ngx_processes[ngx_process_slot].channel[0];
-
         ngx_pass_open_channel(cycle, &ch);
     }
 }
@@ -722,21 +719,22 @@ ngx_master_process_exit(ngx_cycle_t *cycle)
     exit(0);
 }
 
-
+/* <TAKE CARE!!!>worker进程的入口函数 */
 static void
 ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 {
-    ngx_int_t worker = (intptr_t) data;
+    ngx_int_t worker = (intptr_t) data;        /* 启动index，即for循环的0~n */
 
-    ngx_process = NGX_PROCESS_WORKER;
-    ngx_worker = worker;
+    ngx_process = NGX_PROCESS_WORKER;          /* 变更进程角色 */
+    ngx_worker = worker;                       /* 记录启动顺序 */
 
+    /* 设定CPU亲昵性；屏蔽信号；降低权限；设置系统限制，如fd上限等；监听通信管道等 */
     ngx_worker_process_init(cycle, worker);
-
+    /* 设定程序名 */
     ngx_setproctitle("worker process");
 
+    /* 进程主循环 */
     for ( ;; ) {
-
         if (ngx_exiting) {
             ngx_event_cancel_timers();
 
@@ -750,8 +748,10 @@ ngx_worker_process_cycle(ngx_cycle_t *cycle, void *data)
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, cycle->log, 0, "worker cycle");
 
+        /* <Bang!!!>基于epoll的高速IO模型入口 */
         ngx_process_events_and_timers(cycle);
 
+        /* 其他信号处理 */
         if (ngx_terminate) {
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "exiting");
 
@@ -798,6 +798,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
 
+    /* 设置调度权限，对应配置关键字worker_priority */
     if (worker >= 0 && ccf->priority != 0) {
         if (setpriority(PRIO_PROCESS, 0, ccf->priority) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
@@ -805,6 +806,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         }
     }
 
+    /* 设置允许打开的fd上限，对应worker_rlimit_nofile */
     if (ccf->rlimit_nofile != NGX_CONF_UNSET) {
         rlmt.rlim_cur = (rlim_t) ccf->rlimit_nofile;
         rlmt.rlim_max = (rlim_t) ccf->rlimit_nofile;
@@ -816,6 +818,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         }
     }
 
+    /* 设置coredump文件大小上限 */
     if (ccf->rlimit_core != NGX_CONF_UNSET) {
         rlmt.rlim_cur = (rlim_t) ccf->rlimit_core;
         rlmt.rlim_max = (rlim_t) ccf->rlimit_core;
@@ -827,6 +830,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         }
     }
 
+    /* 降低权限 */
     if (geteuid() == 0) {
         if (setgid(ccf->group) == -1) {
             ngx_log_error(NGX_LOG_EMERG, cycle->log, ngx_errno,
@@ -849,6 +853,10 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         }
     }
 
+    /* 设置亲昵性
+       未配置亲昵性，由操作系统决定
+       设置了auto属性的，1~ngx_cpu-1绑定前ngx_cpu-1个worker进程，其余绑定到0核 
+       设置了具体的绑定关系，由具体绑定关系决定，未指定的部分绑定到ngx_cpu-1核心 */
     if (worker >= 0) {
         cpu_affinity = ngx_get_cpu_affinity(worker);
 
@@ -868,6 +876,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
 
 #endif
 
+    /* 更换执行路径 */
     if (ccf->working_directory.len) {
         if (chdir((char *) ccf->working_directory.data) == -1) {
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
@@ -877,13 +886,14 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         }
     }
 
+    /* 设置屏蔽信号，不屏蔽任何信号 */
     sigemptyset(&set);
-
     if (sigprocmask(SIG_SETMASK, &set, NULL) == -1) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "sigprocmask() failed");
     }
 
+    /* 初始化随机种子 */
     srandom((ngx_pid << 16) ^ ngx_time());
 
     /*
@@ -895,6 +905,7 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         ls[i].previous = NULL;
     }
 
+    /* 模块儿进程阶段初始化 */
     for (i = 0; cycle->modules[i]; i++) {
         if (cycle->modules[i]->init_process) {
             if (cycle->modules[i]->init_process(cycle) == NGX_ERROR) {
@@ -904,6 +915,9 @@ ngx_worker_process_init(ngx_cycle_t *cycle, ngx_int_t worker)
         }
     }
 
+    /* 加入epoll，监听其他进程通过管道发来的消息；
+       和主进程通信：对端[0]，本段[1] 
+       和其他worker进程：本端[0]，对端[1] */
     for (n = 0; n < ngx_last_process; n++) {
 
         if (ngx_processes[n].pid == -1) {
