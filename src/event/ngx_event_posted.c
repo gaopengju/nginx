@@ -9,9 +9,10 @@
 #include <ngx_core.h>
 #include <ngx_event.h>
 
-
-ngx_queue_t  ngx_posted_accept_events;
-ngx_queue_t  ngx_posted_events;
+/* 分为两个队列，因为插入ACCEPT事件需要持有锁，而其他的事件不需要持有锁；
+   分开处理，从而最大限度的压缩加锁串行的时间粒度 */
+ngx_queue_t  ngx_posted_accept_events;        /* ACCEPT事件队列 */
+ngx_queue_t  ngx_posted_events;               /* 其他读写IO事件队列 */
 
 
 void

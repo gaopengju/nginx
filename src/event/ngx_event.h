@@ -429,15 +429,15 @@ extern ngx_os_io_t  ngx_io;
 
 
 typedef struct {
-    ngx_uint_t    connections;
-    ngx_uint_t    use;
+    ngx_uint_t    connections;               /* 配置events{worker_connections}，默认值512 */
+    ngx_uint_t    use;                       /* ngx_epoll_module->ctx_index */
 
     ngx_flag_t    multi_accept;
     ngx_flag_t    accept_mutex;
 
     ngx_msec_t    accept_mutex_delay;
 
-    u_char       *name;
+    u_char       *name;                      /* 对于linux, "epoll" */
 
 #if (NGX_DEBUG)
     ngx_array_t   debug_connection;

@@ -41,14 +41,14 @@ sig_atomic_t          ngx_event_timer_alarm;
 static ngx_uint_t     ngx_event_max_module;
 
 ngx_uint_t            ngx_event_flags;
-ngx_event_actions_t   ngx_event_actions;
+ngx_event_actions_t   ngx_event_actions;         /* epoll方式，=ngx_epoll_module_ctx.actions */
 
 
 static ngx_atomic_t   connection_counter = 1;
 ngx_atomic_t         *ngx_connection_counter = &connection_counter;
 
 
-ngx_atomic_t         *ngx_accept_mutex_ptr;
+ngx_atomic_t         *ngx_accept_mutex_ptr;      /* 多worker进程共享的ACCEPT锁 */
 ngx_shmtx_t           ngx_accept_mutex;          /* 多worker进程共享内存锁 */
 ngx_uint_t            ngx_use_accept_mutex;      /* 多worker进程时=1, 用于accept，防止惊群 */
 ngx_uint_t            ngx_accept_events;
@@ -97,7 +97,7 @@ static ngx_core_module_t  ngx_events_module_ctx = {
     ngx_event_init_conf
 };
 
-
+/* 事件核心模型 */
 ngx_module_t  ngx_events_module = {
     NGX_MODULE_V1,
     &ngx_events_module_ctx,                /* module context */
@@ -173,7 +173,7 @@ ngx_event_module_t  ngx_event_core_module_ctx = {
     { NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL }
 };
 
-
+/* 事件处理核心模块儿 */
 ngx_module_t  ngx_event_core_module = {
     NGX_MODULE_V1,
     &ngx_event_core_module_ctx,            /* module context */
@@ -453,6 +453,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
     ngx_timer_resolution = ccf->timer_resolution;
 
+    /* 配置参数正确性验证 */
 #if !(NGX_WIN32)
     {
     ngx_int_t      limit;
@@ -484,6 +485,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
         return NGX_OK;
     }
 
+    /* 后续由master进程创建worker进程共享的ACCEPT锁 */
     if (ngx_accept_mutex_ptr) {
         return NGX_OK;
     }
@@ -589,8 +591,9 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
     ecf = ngx_event_get_conf(cycle->conf_ctx, ngx_event_core_module);
 
+    /* worker进程启动收发报文前初始化 */
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex) {
-        ngx_use_accept_mutex = 1;
+        ngx_use_accept_mutex = 1;          /* 多个worker，启用ACCEPT锁 */
         ngx_accept_mutex_held = 0;
         ngx_accept_mutex_delay = ecf->accept_mutex_delay;
 
@@ -609,13 +612,16 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
+    /* 初始化事件队列 */
     ngx_queue_init(&ngx_posted_accept_events);
     ngx_queue_init(&ngx_posted_events);
 
+    /* 初始化时钟队列 */
     if (ngx_event_timer_init(cycle->log) == NGX_ERROR) {
         return NGX_ERROR;
     }
 
+    /* epoll系统调用ngx_epoll_init() */
     for (m = 0; cycle->modules[m]; m++) {
         if (cycle->modules[m]->type != NGX_EVENT_MODULE) {
             continue;
@@ -626,7 +632,6 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
         module = cycle->modules[m]->ctx;
-
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK) {
             /* fatal */
             exit(2);
@@ -1203,15 +1208,13 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
     ngx_event_module_t  *event_module;
 
     module = NULL;
-
+    
+    /* 创建epoll句柄，参数>0即可 */
 #if (NGX_HAVE_EPOLL) && !(NGX_TEST_BUILD_EPOLL)
-
     fd = epoll_create(100);
-
     if (fd != -1) {
         (void) close(fd);
-        module = &ngx_epoll_module;
-
+        module = &ngx_epoll_module;             /* 对于linux，选择epoll */
     } else if (ngx_errno != NGX_ENOSYS) {
         module = &ngx_epoll_module;
     }
@@ -1219,23 +1222,17 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
 #endif
 
 #if (NGX_HAVE_DEVPOLL) && !(NGX_TEST_BUILD_DEVPOLL)
-
     module = &ngx_devpoll_module;
-
 #endif
 
 #if (NGX_HAVE_KQUEUE)
-
     module = &ngx_kqueue_module;
-
 #endif
 
 #if (NGX_HAVE_SELECT)
-
     if (module == NULL) {
         module = &ngx_select_module;
     }
-
 #endif
 
     if (module == NULL) {
@@ -1261,7 +1258,8 @@ ngx_event_core_init_conf(ngx_cycle_t *cycle, void *conf)
         ngx_log_error(NGX_LOG_EMERG, cycle->log, 0, "no events module found");
         return NGX_CONF_ERROR;
     }
-
+    
+    /* 默认值初始化 */
     ngx_conf_init_uint_value(ecf->connections, DEFAULT_CONNECTIONS);
     cycle->connection_n = ecf->connections;
 

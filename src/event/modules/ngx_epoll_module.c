@@ -318,7 +318,7 @@ failed:
 
 #endif
 
-
+/* worker进程收发报文前，epoll系统初始化 */
 static ngx_int_t
 ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 {
