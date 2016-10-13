@@ -62,7 +62,8 @@ struct ngx_cycle_s {
                                                  方式加载, 初始时为继承的老进程的监听
                                                  插口fd数组; 也可以通过环境变量继承已
                                                  打开的插口数组, export NGINX="
-                                                 16000:16500:16600;" */
+                                                 16000:16500:16600;" 
+                                                 ngx_listening_t */
     ngx_array_t               paths;
     ngx_array_t               config_dump;
     ngx_list_t                open_files;
@@ -93,7 +94,7 @@ typedef struct {
     ngx_flag_t                daemon;
     ngx_flag_t                master;
 
-    ngx_msec_t                timer_resolution;
+    ngx_msec_t                timer_resolution;   /* 是否使用SIGALRM提供定时器解决方案 */
 
     ngx_int_t                 worker_processes;   /* 配置worker_processes，worker进程数 */
     ngx_int_t                 debug_points;
@@ -107,9 +108,9 @@ typedef struct {
     ngx_uint_t                cpu_affinity_n;     /* cpu_affinity[]数组大小 */
     ngx_cpuset_t             *cpu_affinity;       /* 配置worker_cpu_affinity，cpu亲昵性*/
 
-    char                     *username;
-    ngx_uid_t                 user;
-    ngx_gid_t                 group;
+    char                     *username;           /* 用户名 */
+    ngx_uid_t                 user;               /* 用户ID */
+    ngx_gid_t                 group;              /* 用户组ID */
 
     ngx_str_t                 working_directory;  /* 配置working_directory，worker进程执行路径 */
     ngx_str_t                 lock_file;
@@ -118,7 +119,7 @@ typedef struct {
     ngx_str_t                 oldpid;
 
     ngx_array_t               env;
-    char                    **environment;
+    char                    **environment;        /* 保存的环境变量 */
 } ngx_core_conf_t;
 
 

@@ -56,53 +56,53 @@
 typedef struct ngx_http_location_tree_node_s  ngx_http_location_tree_node_t;
 typedef struct ngx_http_core_loc_conf_s  ngx_http_core_loc_conf_t;
 
-
+/* 对应配置server{listen xxxx; } */
 typedef struct {
-    ngx_sockaddr_t             sockaddr;
-    socklen_t                  socklen;
+    ngx_sockaddr_t             sockaddr;           /* 网络字节序ip地址 */
+    socklen_t                  socklen;            /* sockaddr长度，区分v4/v6 */
 
-    unsigned                   set:1;
-    unsigned                   default_server:1;
-    unsigned                   bind:1;
-    unsigned                   wildcard:1;
+    unsigned                   set:1;              /* 是否设置了backlog/rcvbuf/...等特性 */
+    unsigned                   default_server:1;   /* 对应配置default_server/default */
+    unsigned                   bind:1;             /* 配置bind */
+    unsigned                   wildcard:1;         /* 监听地址是否为ANY */
 #if (NGX_HTTP_SSL)
-    unsigned                   ssl:1;
+    unsigned                   ssl:1;              /* 配置ssl */
 #endif
 #if (NGX_HTTP_V2)
-    unsigned                   http2:1;
+    unsigned                   http2:1;            /* 配置http2 */
 #endif
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
-    unsigned                   ipv6only:1;
+    unsigned                   ipv6only:1;          /* 配置ipv6=on/off */
 #endif
 #if (NGX_HAVE_REUSEPORT)
-    unsigned                   reuseport:1;
+    unsigned                   reuseport:1;         /* 配置reuseport */
 #endif
-    unsigned                   so_keepalive:2;
-    unsigned                   proxy_protocol:1;
+    unsigned                   so_keepalive:2;      /* 配置so_keepalive=on/off */
+    unsigned                   proxy_protocol:1;    /* 配置proxy_protocol */
 
-    int                        backlog;
-    int                        rcvbuf;
-    int                        sndbuf;
+    int                        backlog;             /* 配置backlog=, listen()的参数，linux为511 */
+    int                        rcvbuf;              /* 配置rcvbuf= */
+    int                        sndbuf;              /* 配置sndbuf= */
 #if (NGX_HAVE_SETFIB)
-    int                        setfib;
+    int                        setfib;              /* 配置setfib= */
 #endif
 #if (NGX_HAVE_TCP_FASTOPEN)
-    int                        fastopen;
+    int                        fastopen;            /* 配置fastopen= */
 #endif
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
-    int                        tcp_keepidle;
+    int                        tcp_keepidle;        /* 对应so_keepalive= */
     int                        tcp_keepintvl;
     int                        tcp_keepcnt;
 #endif
 
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
-    char                      *accept_filter;
+    char                      *accept_filter;      /* 配置accept_filter= */
 #endif
 #if (NGX_HAVE_DEFERRED_ACCEPT && defined TCP_DEFER_ACCEPT)
-    ngx_uint_t                 deferred_accept;
+    ngx_uint_t                 deferred_accept;    /* 配置deferred= */
 #endif
 
-    u_char                     addr[NGX_SOCKADDR_STRLEN + 1];
+    u_char                     addr[NGX_SOCKADDR_STRLEN + 1];   /* ip地址的可读格式 */
 } ngx_http_listen_opt_t;
 
 
@@ -149,9 +149,9 @@ typedef struct {
     ngx_array_t                handlers;
 } ngx_http_phase_t;
 
-
+/* ngx_http_core_module的http{}环境的main_conf配置 */
 typedef struct {
-    ngx_array_t                servers;         /* ngx_http_core_srv_conf_t指针数组 */
+    ngx_array_t                servers;         /* server{}配置数组，ngx_http_core_srv_conf_t */
 
     ngx_http_phase_engine_t    phase_engine;
 
@@ -170,7 +170,7 @@ typedef struct {
 
     ngx_hash_keys_arrays_t    *variables_keys;
 
-    ngx_array_t               *ports;
+    ngx_array_t               *ports;           /* listen监听端口数组，ngx_http_conf_port_t */
 
     ngx_uint_t                 try_files;       /* unsigned  try_files:1 */
 
@@ -179,13 +179,12 @@ typedef struct {
 
 
 typedef struct {
-    /* array of the ngx_http_server_name_t, "server_name" directive */
-    ngx_array_t                 server_names;
-
+    ngx_array_t                 server_names;        /* 配置server_name, 虚拟主机数组
+                                                        ngx_http_server_name_t; */
     /* server ctx */
-    ngx_http_conf_ctx_t        *ctx;
+    ngx_http_conf_ctx_t        *ctx;                 /* server{}环境上下文 */
 
-    ngx_str_t                   server_name;
+    ngx_str_t                   server_name;         /* */
 
     size_t                      connection_pool_size;
     size_t                      request_pool_size;
@@ -199,24 +198,24 @@ typedef struct {
     ngx_flag_t                  merge_slashes;
     ngx_flag_t                  underscores_in_headers;
 
-    unsigned                    listen:1;
+    unsigned                    listen:1;          /* 是否配置了listen指令 */
 #if (NGX_PCRE)
-    unsigned                    captures:1;
+    unsigned                    captures:1;        /* 是否有变量捕捉??? */
 #endif
 
-    ngx_http_core_loc_conf_t  **named_locations;
+    ngx_http_core_loc_conf_t  **named_locations;   /**/
 } ngx_http_core_srv_conf_t;
 
 
 /* list of structures to find core_srv_conf quickly at run time */
 
-
+/* 虚拟主机名，对应server_name配置指令 */
 typedef struct {
 #if (NGX_PCRE)
-    ngx_http_regex_t          *regex;
+    ngx_http_regex_t          *regex;    /* 主机名支持正则表达式 */
 #endif
-    ngx_http_core_srv_conf_t  *server;   /* virtual name server conf */
-    ngx_str_t                  name;
+    ngx_http_core_srv_conf_t  *server;   /* 对应server{}环境的srv_conf配置 */
+    ngx_str_t                  name;     /* 主机名 */
 } ngx_http_server_name_t;
 
 
@@ -266,16 +265,16 @@ typedef struct {
     ngx_uint_t                 naddrs;
 } ngx_http_port_t;
 
-
+/* listen端口的配置结构 */
 typedef struct {
-    ngx_int_t                  family;
-    in_port_t                  port;
-    ngx_array_t                addrs;     /* array of ngx_http_conf_addr_t */
+    ngx_int_t                  family;    /* 地址类型，struct sockaddr->sa_family */
+    in_port_t                  port;      /* 端口 */
+    ngx_array_t                addrs;     /* 监听地址数组，ngx_http_conf_addr_t */
 } ngx_http_conf_port_t;
 
-
+/* 端口结构中，存储对应监听地址的信息结构 */
 typedef struct {
-    ngx_http_listen_opt_t      opt;
+    ngx_http_listen_opt_t      opt;       /* 配置http{ server{listen xxx}}的解析结果 */
 
     ngx_hash_t                 hash;
     ngx_hash_wildcard_t       *wc_head;
@@ -287,8 +286,9 @@ typedef struct {
 #endif
 
     /* the default server configuration for this address:port */
-    ngx_http_core_srv_conf_t  *default_server;
-    ngx_array_t                servers;  /* array of ngx_http_core_srv_conf_t */
+    ngx_http_core_srv_conf_t  *default_server;    /* 默认服务器 */
+    ngx_array_t                servers;           /* server{}配置信息指针数组，
+                                                     ngx_http_core_srv_conf_t */
 } ngx_http_conf_addr_t;
 
 

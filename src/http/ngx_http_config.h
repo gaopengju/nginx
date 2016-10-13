@@ -13,11 +13,12 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-
+/* http模块儿相关配置信息上下文(ctx)， http、server、location上下文都是分配的
+   此结构 */
 typedef struct {
-    void        **main_conf;
-    void        **srv_conf;
-    void        **loc_conf;
+    void        **main_conf;     对应http{}配置信息
+    void        **srv_conf;      对应server{}配置信息
+    void        **loc_conf;      对应location{}配置信息
 } ngx_http_conf_ctx_t;
 
 

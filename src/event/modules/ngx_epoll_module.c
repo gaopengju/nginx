@@ -95,7 +95,7 @@ struct io_event {
 
 
 typedef struct {
-    ngx_uint_t  events;
+    ngx_uint_t  events;           /* */
     ngx_uint_t  aio_requests;
 } ngx_epoll_conf_t;
 
@@ -198,6 +198,7 @@ ngx_event_module_t  ngx_epoll_module_ctx = {
     }
 };
 
+/* linux的高速EPOLL IO模型 */
 ngx_module_t  ngx_epoll_module = {
     NGX_MODULE_V1,
     &ngx_epoll_module_ctx,               /* module context */

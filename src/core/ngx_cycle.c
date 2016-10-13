@@ -611,11 +611,11 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
     }
 
-    /* <Bang!!!>调用socket、bind、listen() */
+    /* <Bang!!!>调用socket、bind、listen()，建立监听插口链路；并根据listen配置
+                设置链路属性 */
     if (ngx_open_listening_sockets(cycle) != NGX_OK) {
         goto failed;
     }
-
     if (!ngx_test_config) {
         ngx_configure_listening_sockets(cycle);
     }

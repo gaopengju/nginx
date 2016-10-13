@@ -213,7 +213,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     pcf = *cf;
     cf->ctx = ctx;
 
-    /* 模块儿配置解析前处理 */
+    /* 模块儿配置解析前处理，注册内部变量 */
     for (m = 0; cf->cycle->modules[m]; m++) {
         if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
             continue;
@@ -329,7 +329,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
 
-    /* optimize the lists of ports, addresses and server names */
+    /* <Bang!!!>建立监听插口信息结构 */
     if (ngx_http_optimize_servers(cf, cmcf, cmcf->ports) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -1148,7 +1148,6 @@ ngx_http_add_listen(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     ngx_http_core_main_conf_t  *cmcf;
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
-
     if (cmcf->ports == NULL) {
         cmcf->ports = ngx_array_create(cf->temp_pool, 2,
                                        sizeof(ngx_http_conf_port_t));
@@ -1156,24 +1155,24 @@ ngx_http_add_listen(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
             return NGX_ERROR;
         }
     }
-
+    
+    /* 获取端口号 */
     sa = &lsopt->sockaddr.sockaddr;
     p = ngx_inet_get_port(sa);
 
+    /* 端口已存在，加入对应的监听地址 */
     port = cmcf->ports->elts;
     for (i = 0; i < cmcf->ports->nelts; i++) {
 
         if (p != port[i].port || sa->sa_family != port[i].family) {
             continue;
         }
-
+        
         /* a port is already in the port list */
-
         return ngx_http_add_addresses(cf, cscf, &port[i], lsopt);
     }
 
-    /* add a port to the port list */
-
+    /* 加入到ngx_http_core_module模块儿的main_conf配置的端口列表 */
     port = ngx_array_push(cmcf->ports);
     if (port == NULL) {
         return NGX_ERROR;
@@ -1183,10 +1182,11 @@ ngx_http_add_listen(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     port->port = p;
     port->addrs.elts = NULL;
 
+    /* 端口结构中加入监听地址 */
     return ngx_http_add_address(cf, cscf, port, lsopt);
 }
 
-
+/* 通过listen配置的监听地址加入到对应的端口结构中 */
 static ngx_int_t
 ngx_http_add_addresses(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     ngx_http_conf_port_t *port, ngx_http_listen_opt_t *lsopt)
@@ -1204,9 +1204,7 @@ ngx_http_add_addresses(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
      * we cannot compare whole sockaddr struct's as kernel
      * may fill some fields in inherited sockaddr struct's
      */
-
     addr = port->addrs.elts;
-
     for (i = 0; i < port->addrs.nelts; i++) {
 
         if (ngx_cmp_sockaddr(&lsopt->sockaddr.sockaddr, lsopt->socklen,
@@ -1217,8 +1215,7 @@ ngx_http_add_addresses(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
             continue;
         }
 
-        /* the address is already in the address list */
-
+        /* 地址已经存在 */
         if (ngx_http_add_server(cf, cscf, &addr[i]) != NGX_OK) {
             return NGX_ERROR;
         }
@@ -1235,6 +1232,7 @@ ngx_http_add_addresses(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         http2 = lsopt->http2 || addr[i].opt.http2;
 #endif
 
+        /* 利用新属性覆盖旧地址属性，前提是旧设置没有定制特殊属性 */
         if (lsopt->set) {
 
             if (addr[i].opt.set) {
@@ -1247,7 +1245,6 @@ ngx_http_add_addresses(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         }
 
         /* check the duplicate "default" server for this address:port */
-
         if (lsopt->default_server) {
 
             if (default_server) {
@@ -1272,8 +1269,7 @@ ngx_http_add_addresses(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         return NGX_OK;
     }
 
-    /* add the address to the addresses list that bound to this port */
-
+    /* 添加地址信息到对应的端口 */
     return ngx_http_add_address(cf, cscf, port, lsopt);
 }
 
@@ -1281,8 +1277,9 @@ ngx_http_add_addresses(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 /*
  * add the server address, the server names and the server core module
  * configurations to the port list
+ *
+ * 添加监听地址信息到对应的监听端口结构
  */
-
 static ngx_int_t
 ngx_http_add_address(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     ngx_http_conf_port_t *port, ngx_http_listen_opt_t *lsopt)
@@ -1316,7 +1313,7 @@ ngx_http_add_address(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
         return NGX_ERROR;
     }
 
-    addr->opt = *lsopt;
+    addr->opt = *lsopt;                /* 存储listen xxx的解析结果 */
     addr->hash.buckets = NULL;
     addr->hash.size = 0;
     addr->wc_head = NULL;
@@ -1333,7 +1330,6 @@ ngx_http_add_address(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 
 
 /* add the server core module configuration to the address:port */
-
 static ngx_int_t
 ngx_http_add_server(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     ngx_http_conf_addr_t *addr)
@@ -1370,7 +1366,7 @@ ngx_http_add_server(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
     return NGX_OK;
 }
 
-
+/* http{}解析完毕后，建立监听插口 */
 static ngx_int_t
 ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     ngx_array_t *ports)
@@ -1385,7 +1381,7 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 
     port = ports->elts;
     for (p = 0; p < ports->nelts; p++) {
-
+        /* 端口对应的地址排序，首先是特殊的绑定的，其次是普通的，最后是统配的 */
         ngx_sort(port[p].addrs.elts, (size_t) port[p].addrs.nelts,
                  sizeof(ngx_http_conf_addr_t), ngx_http_cmp_conf_addrs);
 
@@ -1393,7 +1389,7 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
          * check whether all name-based servers have the same
          * configuration as a default server for given address:port
          */
-
+        /* server_name作hash，加速查找 */
         addr = port[p].addrs.elts;
         for (a = 0; a < port[p].addrs.nelts; a++) {
 
@@ -1409,6 +1405,7 @@ ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
             }
         }
 
+        /* 初始化监听插口 */
         if (ngx_http_init_listening(cf, &port[p]) != NGX_OK) {
             return NGX_ERROR;
         }
@@ -1636,12 +1633,13 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
      * the "*:port" only and ignore other implicit bindings.  The bindings
      * have been already sorted: explicit bindings are on the start, then
      * implicit bindings go, and wildcard binding is in the end.
+     *
+     * 如果有统配地址，则只建立统配地址的监听；因为前边已经通过ngx_sort()排序，
+     * 统配地址都在最后
      */
-
     if (addr[last - 1].opt.wildcard) {
         addr[last - 1].opt.bind = 1;
         bind_wildcard = 1;
-
     } else {
         bind_wildcard = 0;
     }
@@ -1649,24 +1647,23 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
     i = 0;
 
     while (i < last) {
-
         if (bind_wildcard && !addr[i].opt.bind) {
             i++;
             continue;
         }
-
+        
+        /* 创建并根据listen配置指令的结果初始化listening监听结构 */
         ls = ngx_http_add_listening(cf, &addr[i]);
         if (ls == NULL) {
             return NGX_ERROR;
         }
 
+        /* 记录此链路对应的监听地址 */
         hport = ngx_pcalloc(cf->pool, sizeof(ngx_http_port_t));
         if (hport == NULL) {
             return NGX_ERROR;
         }
-
         ls->servers = hport;
-
         hport->naddrs = i + 1;
 
         switch (ls->sockaddr->sa_family) {
@@ -1685,6 +1682,7 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
             break;
         }
 
+        /* 对应配置reuseport，每个worker进程一个对应的监听信息结构 */
         if (ngx_clone_listening(cf, ls) != NGX_OK) {
             return NGX_ERROR;
         }
@@ -1704,6 +1702,7 @@ ngx_http_add_listening(ngx_conf_t *cf, ngx_http_conf_addr_t *addr)
     ngx_http_core_loc_conf_t  *clcf;
     ngx_http_core_srv_conf_t  *cscf;
 
+    /* 创建监听插口的信息结构 */
     ls = ngx_create_listening(cf, &addr->opt.sockaddr.sockaddr,
                               addr->opt.socklen);
     if (ls == NULL) {
@@ -1712,6 +1711,7 @@ ngx_http_add_listening(ngx_conf_t *cf, ngx_http_conf_addr_t *addr)
 
     ls->addr_ntop = 1;
 
+    /* <Bang!!!>设置处理句柄 */
     ls->handler = ngx_http_init_connection;
 
     cscf = addr->default_server;
@@ -1737,6 +1737,7 @@ ngx_http_add_listening(ngx_conf_t *cf, ngx_http_conf_addr_t *addr)
     }
 #endif
 
+    /* 从listen配置指令解析的结果，ngx_http_listen_opt_t，继承插口属性 */
     ls->backlog = addr->opt.backlog;
     ls->rcvbuf = addr->opt.rcvbuf;
     ls->sndbuf = addr->opt.sndbuf;
@@ -1785,16 +1786,14 @@ ngx_http_add_addrs(ngx_conf_t *cf, ngx_http_port_t *hport,
     struct sockaddr_in        *sin;
     ngx_http_virtual_names_t  *vn;
 
+    /* 从配置listen解析结果中提取信息保存至此 */
     hport->addrs = ngx_pcalloc(cf->pool,
                                hport->naddrs * sizeof(ngx_http_in_addr_t));
     if (hport->addrs == NULL) {
         return NGX_ERROR;
     }
-
     addrs = hport->addrs;
-
     for (i = 0; i < hport->naddrs; i++) {
-
         sin = &addr[i].opt.sockaddr.sockaddr_in;
         addrs[i].addr = sin->sin_addr.s_addr;
         addrs[i].conf.default_server = addr[i].default_server;

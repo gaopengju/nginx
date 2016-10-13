@@ -419,7 +419,8 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                    - ngx_conf_parse(&conf, )
                      - ngx_conf_handler(&conf)  对应参数cf 
 
-               对于情况3, 此时cf.ctx为配置结构的指针，即ngx_cycle_t->conf_ctx[]的值
+               对于情况3, 一般为递归调用，此时cf.ctx为配置结构的指针，指向对应
+               的server{}或location{}上下文环境的配置ctx
             */
             conf = NULL;
             if (cmd->type & NGX_DIRECT_CONF) {
@@ -451,13 +452,13 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 */
                 conf = &(((void **) cf->ctx)[cf->cycle->modules[i]->index]);
             } else if (cf->ctx) {
-                /* 情况3: 其他非核心模块儿的配置指令
+                /* 情况3: HTTP模块儿的配置指令
             
-                          此时cf指向对应的配置，ngx_cycle_t->conf_ctx[index]
-                          confp指向对应的同类型的配置结构数组
-                          conf指向最终的配置
+                          此时cf指向对应的上下文配置环境，如server{}或location{}
+                          confp指向对应的同类型的配置结构数组，main_/srv_/loc_conf[]
+                          conf指向最终的配置结构
 
-                          典型示例：
+                          典型示例：server_name @ ngx_http_core_module
                  */
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
                 if (confp) {

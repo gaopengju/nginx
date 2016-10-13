@@ -595,15 +595,18 @@ ngx_parse_url(ngx_pool_t *pool, ngx_url_t *u)
 
     p = u->url.data;
     len = u->url.len;
-
+    
+    /* unix: 域名解析，eg，unix:/var/run/nginx.sock */
     if (len >= 5 && ngx_strncasecmp(p, (u_char *) "unix:", 5) == 0) {
         return ngx_parse_unix_domain_url(pool, u);
     }
 
+    /* inet6域名解析，eg，[::]:8000 */
     if (len && p[0] == '[') {
         return ngx_parse_inet6_url(pool, u);
     }
-
+    
+    /* inet域名解析，eg，localhost:80 */
     return ngx_parse_inet_url(pool, u);
 }
 
@@ -845,7 +848,7 @@ ngx_parse_inet_url(ngx_pool_t *pool, ngx_url_t *u)
     if (u->no_resolve) {
         return NGX_OK;
     }
-
+    /* 解析ip地址 */
     if (ngx_inet_resolve_host(pool, u) != NGX_OK) {
         return NGX_ERROR;
     }
@@ -1144,7 +1147,7 @@ ngx_inet_resolve_host(ngx_pool_t *pool, ngx_url_t *u)
 
         i++;
     }
-
+n
     freeaddrinfo(res);
     return NGX_OK;
 

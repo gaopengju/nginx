@@ -24,6 +24,28 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 
 启动nginx时，可通过环境变量NGINX继承已有的socket插口
 
+* 初始化插口
+  - listen配置解析     :: =ngx_http_core_listen():~/src/http/ngx_http_core_module.c=
+  - 建立监听插口结构   :: =ngx_http_optimize_servers():~/src/http/ngx_http.c=
+  - 建立监听链路       :: =ngx_open_listening_sockets():~/src/core/ngx_connection.c=
+  - 根据listen配置设置链路属性  :: =ngx_configure_listening_sockets():~/src/core/ngx_connection.c=
+
+  #+BEGIN_EXAMPLE
+  调用流程
+  -main()                                          ~/src/core/nginx.c
+     -ngx_init_cycle()                             ~/src/core/ngx_cycle.c
+        -ngx_conf_parse()
+           -ngx_http_block()                       ngx_http_module模块儿解析
+              -ngx_http_core_server()              server{}解析
+                 -ngx_http_core_listen()           listen配置解析
+                 -...
+                 -ngx_http_add_listen()            解析结果挂接入配置系统
+              -ngx_http_optimize_servers()         创建监听插口结构
+        -...
+        -ngx_open_listening_sockets()              创建链路
+        -ngx_configure_listening_sockets()         配置链路
+  #+END_EXAMPLE
+
 * 配置解析
   - 入口函数           :: =ngx_conf_parse():~/src/core/ngx_conf_file.c=
   - http{}入口函数     :: =ngx_http_block():~/src/http/ngx_http.c=
@@ -74,7 +96,6 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 
 * worker进程
 *入口函数* =ngx_worker_process_cycle():~/src/os/unix/ngx_process_cycle.c=
-
 
 * 高速IO模型
 *入口函数* =ngx_process_events_and_timers():~/src/event/ngx_event.c=

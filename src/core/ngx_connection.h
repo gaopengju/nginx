@@ -34,11 +34,13 @@ struct ngx_listening_s {
     int                 keepcnt;
 #endif
 
-    /* handler of accepted connection */
-    ngx_connection_handler_pt   handler;
+    ngx_connection_handler_pt   handler; /* 插口处理句柄ngx_http_init_connection() */
 
-    void               *servers;  /* array of ngx_http_in_addr_t, for example */
-
+    void               *servers;         /* ngx_http_port_t数组，此链路对应的server；
+                                            有可能一条链路对应多个server{}配置，如果
+                                            一个server{listen 80;}，另一个server{
+                                            listen 1.1.1.1:80;}，则只建立监听链路
+                                            *:80 */
     ngx_log_t           log;
     ngx_log_t          *logp;
 
@@ -46,10 +48,10 @@ struct ngx_listening_s {
     /* should be here because of the AcceptEx() preread */
     size_t              post_accept_buffer_size;
     /* should be here because of the deferred accept */
-    ngx_msec_t          post_accept_timeout;
-
+    ngx_msec_t          post_accept_timeout;     /* accept后，等待客户端请求数据的
+                                                    超时时限 */
     ngx_listening_t    *previous;
-    ngx_connection_t   *connection;
+    ngx_connection_t   *connection;              /* 插口对应的请求连接 */
 
     ngx_uint_t          worker;
 
@@ -60,10 +62,10 @@ struct ngx_listening_s {
     unsigned            bound:1;       /* already bound */
     unsigned            inherited:1;   /* inherited from previous process */
     unsigned            nonblocking_accept:1;
-    unsigned            listen:1;
-    unsigned            nonblocking:1;
-    unsigned            shared:1;    /* shared between threads or processes */
-    unsigned            addr_ntop:1;
+    unsigned            listen:1;      /* 是否调用了listen()，处于监听状态 */
+    unsigned            nonblocking:1; /* */
+    unsigned            shared:1;      /* shared between threads or processes */
+    unsigned            addr_ntop:1;   /**/
     unsigned            wildcard:1;
 
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
@@ -80,7 +82,7 @@ struct ngx_listening_s {
     unsigned            delete_deferred:1;
     unsigned            add_deferred:1;
 #ifdef SO_ACCEPTFILTER
-    char               *accept_filter;
+    char               *accept_filter; /* 是否支持SO_ACCEPTFILTER, 字符过滤 */
 #endif
 #endif
 #if (NGX_HAVE_SETFIB)
@@ -88,7 +90,8 @@ struct ngx_listening_s {
 #endif
 
 #if (NGX_HAVE_TCP_FASTOPEN)
-    int                 fastopen;
+    int                 fastopen;     /* 是否支持TCP_FASTOPEN, 即三次握手时
+                                         也用来传递数据*/
 #endif
 
 };

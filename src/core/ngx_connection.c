@@ -25,26 +25,25 @@ ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr,
     struct sockaddr  *sa;
     u_char            text[NGX_SOCKADDR_STRLEN];
 
+    /* 加入监听结构指针数组 */
     ls = ngx_array_push(&cf->cycle->listening);
     if (ls == NULL) {
         return NULL;
     }
-
     ngx_memzero(ls, sizeof(ngx_listening_t));
 
+    /* 创建内存，盛放监听地址(ip+port的网络字节序) */
     sa = ngx_palloc(cf->pool, socklen);
     if (sa == NULL) {
         return NULL;
     }
-
     ngx_memcpy(sa, sockaddr, socklen);
-
     ls->sockaddr = sa;
     ls->socklen = socklen;
 
+    /* 获取可读文本并存储 */
     len = ngx_sock_ntop(sa, socklen, text, NGX_SOCKADDR_STRLEN, 1);
     ls->addr_text.len = len;
-
     switch (ls->sockaddr->sa_family) {
 #if (NGX_HAVE_INET6)
     case AF_INET6:
@@ -64,14 +63,13 @@ ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr,
         ls->addr_text_max_len = NGX_SOCKADDR_STRLEN;
         break;
     }
-
     ls->addr_text.data = ngx_pnalloc(cf->pool, len);
     if (ls->addr_text.data == NULL) {
         return NULL;
     }
-
     ngx_memcpy(ls->addr_text.data, text, len);
 
+    /* 初始化其他变量 */
     ls->fd = (ngx_socket_t) -1;
     ls->type = SOCK_STREAM;
 
@@ -90,7 +88,7 @@ ngx_create_listening(ngx_conf_t *cf, struct sockaddr *sockaddr,
     return ls;
 }
 
-
+/* 端口重用的实现 */
 ngx_int_t
 ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
 {
@@ -100,6 +98,7 @@ ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
     ngx_core_conf_t  *ccf;
     ngx_listening_t   ols;
 
+    /* 是否允许端口重用???对应配置reuseport */
     if (!ls->reuseport) {
         return NGX_OK;
     }
@@ -108,11 +107,8 @@ ngx_clone_listening(ngx_conf_t *cf, ngx_listening_t *ls)
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cf->cycle->conf_ctx,
                                            ngx_core_module);
-
     for (n = 1; n < ccf->worker_processes; n++) {
-
         /* create a socket for each worker process */
-
         ls = ngx_array_push(&cf->cycle->listening);
         if (ls == NULL) {
             return NGX_ERROR;
@@ -400,7 +396,6 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
     log = cycle->log;
 
     /* TODO: configurable try number */
-
     for (tries = 5; tries; tries--) {
         failed = 0;
 
@@ -451,14 +446,15 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 continue;
             }
 
+            /* 调用socket() */
             s = ngx_socket(ls[i].sockaddr->sa_family, ls[i].type, 0);
-
             if (s == (ngx_socket_t) -1) {
                 ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
                               ngx_socket_n " %V failed", &ls[i].addr_text);
                 return NGX_ERROR;
             }
 
+            /* 允许地址重用 */
             if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR,
                            (const void *) &reuseaddr, sizeof(int))
                 == -1)
@@ -476,8 +472,8 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 return NGX_ERROR;
             }
 
+            /* 端口重用 */
 #if (NGX_HAVE_REUSEPORT)
-
             if (ls[i].reuseport) {
                 int  reuseport;
 
@@ -521,6 +517,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
 #endif
             /* TODO: close on exit */
 
+            /* 非阻塞 */
             if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
                 if (ngx_nonblocking(s) == -1) {
                     ngx_log_error(NGX_LOG_EMERG, log, ngx_socket_errno,
@@ -540,6 +537,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
             ngx_log_debug2(NGX_LOG_DEBUG_CORE, log, 0,
                            "bind() %V #%d ", &ls[i].addr_text, s);
 
+            /* bind()地址 */
             if (bind(s, ls[i].sockaddr, ls[i].socklen) == -1) {
                 err = ngx_socket_errno;
 
@@ -593,6 +591,7 @@ ngx_open_listening_sockets(ngx_cycle_t *cycle)
                 continue;
             }
 
+            /* listen()，监听链路 */
             if (listen(s, ls[i].backlog) == -1) {
                 err = ngx_socket_errno;
 

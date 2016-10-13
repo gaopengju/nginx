@@ -3063,6 +3063,7 @@ ngx_http_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         (void) ngx_sock_ntop(&lsopt.sockaddr.sockaddr, lsopt.socklen,
                              lsopt.addr, NGX_SOCKADDR_STRLEN, 1);
 
+        /* listen配置信息挂接如配置系统 */
         if (ngx_http_add_listen(cf, cscf, &lsopt) != NGX_OK) {
             return NGX_CONF_ERROR;
         }
@@ -3980,18 +3981,18 @@ ngx_http_core_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     return NGX_CONF_OK;
 }
 
-
+/* listen 1.1.1.1:80; 配置指令的解析入口；支持多条listen */
 static char *
 ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_core_srv_conf_t *cscf = conf;
+    ngx_http_core_srv_conf_t *cscf = conf;   /* server{}环境的srv_conf */
 
     ngx_str_t              *value, size;
     ngx_url_t               u;
     ngx_uint_t              n;
     ngx_http_listen_opt_t   lsopt;
 
-    cscf->listen = 1;
+    cscf->listen = 1;                        /* 配置了listen指令 */
 
     value = cf->args->elts;
 
@@ -4001,6 +4002,7 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     u.listen = 1;
     u.default_port = 80;
 
+    /* 解析配置项 */
     if (ngx_parse_url(cf->pool, &u) != NGX_OK) {
         if (u.err) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
@@ -4011,12 +4013,13 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    /* 记录解析地址 */
     ngx_memzero(&lsopt, sizeof(ngx_http_listen_opt_t));
-
     ngx_memcpy(&lsopt.sockaddr.sockaddr, &u.sockaddr, u.socklen);
 
+    /* 设置监听插口相关的默认值 */
     lsopt.socklen = u.socklen;
-    lsopt.backlog = NGX_LISTEN_BACKLOG;
+    lsopt.backlog = NGX_LISTEN_BACKLOG;        /* listen()参数，linux 511 */
     lsopt.rcvbuf = -1;
     lsopt.sndbuf = -1;
 #if (NGX_HAVE_SETFIB)
@@ -4025,23 +4028,25 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 #if (NGX_HAVE_TCP_FASTOPEN)
     lsopt.fastopen = -1;
 #endif
-    lsopt.wildcard = u.wildcard;
+    lsopt.wildcard = u.wildcard;              /* 监听地址为ANY */
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
     lsopt.ipv6only = 1;
 #endif
 
+    /* 记录可读性的ip地址，如1.1.1.1 */
     (void) ngx_sock_ntop(&lsopt.sockaddr.sockaddr, lsopt.socklen, lsopt.addr,
                          NGX_SOCKADDR_STRLEN, 1);
 
+    /* 其他参数 */
     for (n = 2; n < cf->args->nelts; n++) {
-
+        /* 默认server */
         if (ngx_strcmp(value[n].data, "default_server") == 0
             || ngx_strcmp(value[n].data, "default") == 0)
         {
             lsopt.default_server = 1;
             continue;
         }
-
+        /* bind */
         if (ngx_strcmp(value[n].data, "bind") == 0) {
             lsopt.set = 1;
             lsopt.bind = 1;
@@ -4340,6 +4345,7 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    /* 关联到server{}--srv_conf */
     if (ngx_http_add_listen(cf, cscf, &lsopt) == NGX_OK) {
         return NGX_CONF_OK;
     }
@@ -4351,8 +4357,8 @@ ngx_http_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 static char *
 ngx_http_core_server_name(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
-    ngx_http_core_srv_conf_t *cscf = conf;
-
+    ngx_http_core_srv_conf_t *cscf = conf;  /* 指向ngx_http_core_module模块儿的
+                                               server{}环境的srv_conf */
     u_char                   ch;
     ngx_str_t               *value;
     ngx_uint_t               i;
@@ -4377,7 +4383,7 @@ ngx_http_core_server_name(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
                                "server name \"%V\" has suspicious symbols",
                                &value[i]);
         }
-
+        /* 添加元素虚拟主机数组 */
         sn = ngx_array_push(&cscf->server_names);
         if (sn == NULL) {
             return NGX_CONF_ERROR;
@@ -4386,20 +4392,20 @@ ngx_http_core_server_name(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 #if (NGX_PCRE)
         sn->regex = NULL;
 #endif
-        sn->server = cscf;
+        sn->server = cscf;      /* 回指对应的server{}上下文配置环境的srv_conf */
 
         if (ngx_strcasecmp(value[i].data, (u_char *) "$hostname") == 0) {
-            sn->name = cf->cycle->hostname;
-
+            sn->name = cf->cycle->hostname;      /* 通过变量引用本机名=uname -n */
         } else {
             sn->name = value[i];
         }
 
-        if (value[i].data[0] != '~') {
+        if (value[i].data[0] != '~') {           /* 不区分大小写 */
             ngx_strlow(sn->name.data, sn->name.data, sn->name.len);
             continue;
         }
-
+        
+        /* <NOTE>虚拟主机名支持正则，以‘~’开始 */
 #if (NGX_PCRE)
         {
         u_char               *p;
@@ -4412,12 +4418,12 @@ ngx_http_core_server_name(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             return NGX_CONF_ERROR;
         }
 
-        value[i].len--;
+        value[i].len--;                      /* 跳过字符~ */
         value[i].data++;
 
         ngx_memzero(&rc, sizeof(ngx_regex_compile_t));
 
-        rc.pattern = value[i];
+        rc.pattern = value[i];               /* 赋值正则表达式 */
         rc.err.len = NGX_MAX_CONF_ERRSTR;
         rc.err.data = errstr;
 
@@ -4429,12 +4435,12 @@ ngx_http_core_server_name(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
 
         sn->regex = ngx_http_regex_compile(cf, &rc);
-        if (sn->regex == NULL) {
+        if (sn->regex == NULL) {            /* 编译正则 */
             return NGX_CONF_ERROR;
         }
 
-        sn->name = value[i];
-        cscf->captures = (rc.captures > 0);
+        sn->name = value[i];                /* 记录名字 */
+        cscf->captures = (rc.captures > 0); /* 是否有变量捕捉??? */
         }
 #else
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
