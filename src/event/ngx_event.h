@@ -28,11 +28,11 @@ typedef struct {
 
 
 struct ngx_event_s {
-    void            *data;
+    void            *data;                     /* 等待ACCEPT事件时，指向对应的请求结构，ngx_connection_t */
 
     unsigned         write:1;
 
-    unsigned         accept:1;
+    unsigned         accept:1;                 /* 是否等待ACCEPT */
 
     /* used to detect the stale events in kqueue and epoll */
     unsigned         instance:1;
@@ -107,9 +107,9 @@ struct ngx_event_s {
     unsigned         available:1;
 #endif
 
-    ngx_event_handler_pt  handler;
-
-
+    ngx_event_handler_pt  handler;       /* ACCEPT事件的处理句柄：ngx_event_accept
+                                                                  ngx_event_recvmsg 
+                                          */
 #if (NGX_HAVE_IOCP)
     ngx_event_ovlp_t ovlp;
 #endif

@@ -10,7 +10,7 @@
 #include <ngx_event.h>
 
 
-ngx_os_io_t  ngx_io;
+ngx_os_io_t  ngx_io;                         /* 系统底层IO，EPOLL为ngx_os_io */
 
 
 static void ngx_drain_connections(void);
@@ -1047,13 +1047,12 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
         return NULL;
     }
 
+    /* 从空闲请求链表分配 */
     c = ngx_cycle->free_connections;
-
     if (c == NULL) {
         ngx_drain_connections();
         c = ngx_cycle->free_connections;
     }
-
     if (c == NULL) {
         ngx_log_error(NGX_LOG_ALERT, log, 0,
                       "%ui worker_connections are not enough",
@@ -1069,6 +1068,7 @@ ngx_get_connection(ngx_socket_t s, ngx_log_t *log)
         ngx_cycle->files[s] = c;
     }
 
+    /* 初始化对应的 读、写事件，及fd */
     rev = c->read;
     wev = c->write;
 

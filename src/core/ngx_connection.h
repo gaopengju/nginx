@@ -51,7 +51,7 @@ struct ngx_listening_s {
     ngx_msec_t          post_accept_timeout;     /* accept后，等待客户端请求数据的
                                                     超时时限 */
     ngx_listening_t    *previous;
-    ngx_connection_t   *connection;              /* 插口对应的请求连接 */
+    ngx_connection_t   *connection;              /* 监听到的请求连接 */
 
     ngx_uint_t          worker;
 
@@ -126,18 +126,24 @@ typedef enum {
 
 
 struct ngx_connection_s {
-    void               *data;
-    ngx_event_t        *read;
-    ngx_event_t        *write;
+    void               *data;   /* 空闲时, 作为单链表指针的next;
+                                   建立链接后, 指向具体协议, ngx_http_connection_t;
+                                   接收到数据后, 指向请求, ngx_http_request_t;
+                                 */
+    ngx_event_t        *read;   /* 读事件，对应ngx_cycle->read_events[] */
+    ngx_event_t        *write;  /* 写事件，对应ngx_cycle->write_events[] 
+                                     索引和本结构在ngx_cycle->connections[]
+                                     中的索引一致, 初始化时建立的对应关系 */
+    ngx_socket_t        fd;     /* 插口描述符 */
 
-    ngx_socket_t        fd;
-
-    ngx_recv_pt         recv;
+    ngx_recv_pt         recv;   
     ngx_send_pt         send;
     ngx_recv_chain_pt   recv_chain;
-    ngx_send_chain_pt   send_chain;
+    ngx_send_chain_pt   send_chain;  /* 对应的接收/发送函数；分别设置为
+                                        ngx_recv/ngx_send
+                                        ngx_recv_chain/ngx_send_chain*/
 
-    ngx_listening_t    *listening;
+    ngx_listening_t    *listening;   /* 指向对应的监听链路信息结构 */
 
     off_t               sent;
 
@@ -158,10 +164,10 @@ struct ngx_connection_s {
     ngx_ssl_connection_t  *ssl;
 #endif
 
-    struct sockaddr    *local_sockaddr;
+    struct sockaddr    *local_sockaddr;  /* 本连接绑定的本机地址 */
     socklen_t           local_socklen;
 
-    ngx_buf_t          *buffer;
+    ngx_buf_t          *buffer;          /* 报文缓存 */
 
     ngx_queue_t         queue;
 
@@ -173,13 +179,18 @@ struct ngx_connection_s {
 
     unsigned            log_error:3;     /* ngx_connection_log_error_e */
 
-    unsigned            timedout:1;
+    unsigned            timedout:1;      /* 请求连接超时标志 */
     unsigned            error:1;
     unsigned            destroyed:1;
 
     unsigned            idle:1;
-    unsigned            reusable:1;
-    unsigned            close:1;
+    unsigned            reusable:1;      /* 是否可重用? 设置了此标志, 此链接被
+                                            放置到特定队列, 如果此时请求过
+                                            多, 没有可用的空闲连接, 则释放
+                                            打上此标记的连接, 达到重用的目
+                                            的; 此处特定队列指ngx_cycle->
+                                            reusable_connections_queue */
+    unsigned            close:1;         /* 链接断开标志 */
     unsigned            shared:1;
 
     unsigned            sendfile:1;

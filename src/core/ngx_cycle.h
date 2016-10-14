@@ -75,7 +75,7 @@ struct ngx_cycle_s {
                                                  上限*/
     ngx_uint_t                files_n;        /* files[]数组的大小 */
 
-    ngx_connection_t         *connections;    /* 初始时分配的连接结构池, connection_n */
+    ngx_connection_t         *connections;    /* 初始时分配的请求连接信息结构池, connection_n */
     ngx_event_t              *read_events;    /* 连接的读事件, connection_n */
     ngx_event_t              *write_events;   /* 连接的写事件, connection_n */
 

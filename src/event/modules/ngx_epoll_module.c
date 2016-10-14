@@ -95,7 +95,7 @@ struct io_event {
 
 
 typedef struct {
-    ngx_uint_t  events;           /* */
+    ngx_uint_t  events;           /* 配置epoll_events，epoll模型事件队列大小，默认512 */
     ngx_uint_t  aio_requests;
 } ngx_epoll_conf_t;
 
@@ -325,7 +325,8 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
     ngx_epoll_conf_t  *epcf;
 
     epcf = ngx_event_get_conf(cycle->conf_ctx, ngx_epoll_module);
-
+    
+    /* 创建EPOLL监听句柄 */
     if (ep == -1) {
         ep = epoll_create(cycle->connection_n / 2);
 
@@ -350,6 +351,7 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 #endif
     }
 
+    /* 创建epoll事件结构队列 */
     if (nevents < epcf->events) {
         if (event_list) {
             ngx_free(event_list);
@@ -364,8 +366,10 @@ ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer)
 
     nevents = epcf->events;
 
+    /* 设置底层IO */
     ngx_io = ngx_os_io;
 
+    /* EPOLL的事件处理函数指针集合 */
     ngx_event_actions = ngx_epoll_module_ctx.actions;
 
 #if (NGX_HAVE_CLEAR_EVENT)

@@ -99,7 +99,32 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 *入口函数* =ngx_worker_process_cycle():~/src/os/unix/ngx_process_cycle.c=
 
 * 高速IO模型
-*入口函数* =ngx_process_events_and_timers():~/src/event/ngx_event.c=
+  - 初始化入口           : =ngx_event_process_init():~/src/event/ngx_event.c=
+  - worker主循环处理入口 : =ngx_process_events_and_timers():~/src/event/ngx_event.c=
+  - 
 
+  #+BEGIN_EXAMPLE
+  -ngx_init_cycle()
+     -ngx_conf_parse()
+        -ngx_events_block()                      events{}解析，ngx_event.c
+     -ngx_init_modules()
+        -ngx_event_module_init()
+  -ngx_master_process_cycle()
+     -ngx_start_worker_processes()
+        -ngx_spawn_process()
+           -fork()
+           -ngx_worker_process_cycle()           worker进程执行入口
+              -ngx_worker_process_init()
+                 -ngx_event_process_init()
+                    -初始化事件队列
+                    -ngx_epoll_init()
+                       -epoll_create()
+                       -创建epoll事件结构数组
+                       -设置底层IO句柄ngx_os_io
+                       -设置数据处理句柄ngx_epoll_module_ctx.actions
+                    -读、写信息链表
+                    -建立监听链路结构与请求结构读对应关系
+                    -设置ACCEPT事件处理句柄ngx_event_accept/ngx_event_recvmsg
+    #+END_EXAMPLE
 
 

@@ -180,8 +180,10 @@ ngx_module_t  ngx_event_core_module = {
     ngx_event_core_commands,               /* module directives */
     NGX_EVENT_MODULE,                      /* module type */
     NULL,                                  /* init master */
-    ngx_event_module_init,                 /* init module */
-    ngx_event_process_init,                /* init process */
+    ngx_event_module_init,                 /* 配置解析后，模块儿初始化 */
+    ngx_event_process_init,                /* worker运行前，建立监听信息结构与
+                                              请求信息结构之间的对应关系；并开
+                                              始监听ACCEPT事件 */
     NULL,                                  /* init thread */
     NULL,                                  /* exit thread */
     NULL,                                  /* exit process */
@@ -641,7 +643,6 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     }
 
 #if !(NGX_WIN32)
-
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
         struct itimerval  itv;
@@ -696,26 +697,28 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
 #endif
 
+    /* 分配请求信息结构 */
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL) {
         return NGX_ERROR;
     }
-
     c = cycle->connections;
 
+    /* 分配读事件信息结构 */
     cycle->read_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                    cycle->log);
     if (cycle->read_events == NULL) {
         return NGX_ERROR;
     }
-
+    
     rev = cycle->read_events;
     for (i = 0; i < cycle->connection_n; i++) {
         rev[i].closed = 1;
         rev[i].instance = 1;
     }
 
+    /* 分配写事件信息结构 */
     cycle->write_events = ngx_alloc(sizeof(ngx_event_t) * cycle->connection_n,
                                     cycle->log);
     if (cycle->write_events == NULL) {
@@ -727,9 +730,9 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         wev[i].closed = 1;
     }
 
+    /* 读\写事件信息结构对应 */
     i = cycle->connection_n;
     next = NULL;
-
     do {
         i--;
 
@@ -741,36 +744,33 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         next = &c[i];
     } while (i);
 
+    /* 请求信息结构存储到空闲链表 */
     cycle->free_connections = next;
     cycle->free_connection_n = cycle->connection_n;
 
-    /* for each listening socket */
-
+    /* 为监听链路分配请求连接信息结构，并初始化 */
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++) {
-
 #if (NGX_HAVE_REUSEPORT)
         if (ls[i].reuseport && ls[i].worker != ngx_worker) {
             continue;
         }
 #endif
-
         c = ngx_get_connection(ls[i].fd, cycle->log);
-
-        if (c == NULL) {
+        if (c == NULL) {               /* 查找空闲的连接结构 */
             return NGX_ERROR;
         }
 
         c->type = ls[i].type;
         c->log = &ls[i].log;
 
-        c->listening = &ls[i];
+        c->listening = &ls[i];         /* 互相引用 */
         ls[i].connection = c;
 
         rev = c->read;
 
         rev->log = c->log;
-        rev->accept = 1;
+        rev->accept = 1;               /* 等待ACCEPT事件 */
 
 #if (NGX_HAVE_DEFERRED_ACCEPT)
         rev->deferred_accept = ls[i].deferred_accept;
@@ -797,7 +797,6 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
 #if (NGX_WIN32)
-
         if (ngx_event_flags & NGX_USE_IOCP_EVENT) {
             ngx_iocp_conf_t  *iocpcf;
 
@@ -833,10 +832,11 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
 #else
-
+        /* 设置处理句柄 */
         rev->handler = (c->type == SOCK_STREAM) ? ngx_event_accept
                                                 : ngx_event_recvmsg;
 
+        /* 多个worker进程，则等待抢到ACCEPT锁后才能处理事件 */
         if (ngx_use_accept_mutex
 #if (NGX_HAVE_REUSEPORT)
             && !ls[i].reuseport
@@ -846,6 +846,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
             continue;
         }
 
+        /* 单处理进程，则直接加入等待队列 */
         if (ngx_add_event(rev, NGX_READ_EVENT, 0) == NGX_ERROR) {
             return NGX_ERROR;
         }
