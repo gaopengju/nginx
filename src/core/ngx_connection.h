@@ -65,7 +65,7 @@ struct ngx_listening_s {
     unsigned            listen:1;      /* 是否调用了listen()，处于监听状态 */
     unsigned            nonblocking:1; /* */
     unsigned            shared:1;      /* shared between threads or processes */
-    unsigned            addr_ntop:1;   /**/
+    unsigned            addr_ntop:1;   /* 是否需要转换地址到可读格式，=1, 则赋值addr_text */
     unsigned            wildcard:1;
 
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
@@ -153,7 +153,7 @@ struct ngx_connection_s {
 
     int                 type;
 
-    struct sockaddr    *sockaddr;
+    struct sockaddr    *sockaddr;        /* 对端IP+PORT信息 */
     socklen_t           socklen;
     ngx_str_t           addr_text;
 
@@ -171,7 +171,7 @@ struct ngx_connection_s {
 
     ngx_queue_t         queue;
 
-    ngx_atomic_uint_t   number;
+    ngx_atomic_uint_t   number;          /* 本结构对应的请求index，从1开始的实时计数值 */
 
     ngx_uint_t          requests;
 

@@ -30,23 +30,23 @@ typedef struct {
 struct ngx_event_s {
     void            *data;                     /* 等待ACCEPT事件时，指向对应的请求结构，ngx_connection_t */
 
-    unsigned         write:1;
+    unsigned         write:1;                  /* 读、写事件标识 */
 
     unsigned         accept:1;                 /* 是否等待ACCEPT */
 
     /* used to detect the stale events in kqueue and epoll */
-    unsigned         instance:1;
+    unsigned         instance:1;               /* 用于发现过期的event */
 
     /*
      * the event was passed or would be passed to a kernel;
      * in aio mode - operation was posted.
      */
-    unsigned         active:1;
+    unsigned         active:1;                 /* =1, 已经加入到epoll监控系统 */
 
     unsigned         disabled:1;
 
     /* the ready event; in aio mode 0 means that no operation can be posted */
-    unsigned         ready:1;
+    unsigned         ready:1;                  /* =1, 数据到达*/
 
     unsigned         oneshot:1;
 
@@ -56,7 +56,7 @@ struct ngx_event_s {
     unsigned         eof:1;
     unsigned         error:1;
 
-    unsigned         timedout:1;
+    unsigned         timedout:1;              /* 客户端请求是否已超时？ */
     unsigned         timer_set:1;
 
     unsigned         delayed:1;
@@ -66,9 +66,10 @@ struct ngx_event_s {
     /* the pending eof reported by kqueue, epoll or in aio chain operation */
     unsigned         pending_eof:1;
 
-    unsigned         posted:1;
-
-    unsigned         closed:1;
+    unsigned         posted:1;                 /* =1, 放入队列待后续处理；如果
+                                                  立即处理，在加锁的情况下，比
+                                                  较耗费串行资源 */
+    unsigned         closed:1;                 /* 是否处于关闭状态 */
 
     /* to test on worker exit */
     unsigned         channel:1;
@@ -104,11 +105,19 @@ struct ngx_event_s {
 #if (NGX_HAVE_KQUEUE) || (NGX_HAVE_IOCP)
     int              available;
 #else
-    unsigned         available:1;
+    unsigned         available:1;        /* 对应配置"multi_accept on;"，此时，在
+                                             ngx_event_accept()处理ACCEPT事件时，
+                                            会一直调用accept()直到无客户连接 */
 #endif
 
-    ngx_event_handler_pt  handler;       /* ACCEPT事件的处理句柄：ngx_event_accept
-                                                                  ngx_event_recvmsg 
+    ngx_event_handler_pt  handler;       /* ACCEPT事件的处理句柄
+                                                 ngx_event_accept
+                                                 ngx_event_recvmsg
+                                            ACCEPT事件后, 读/写事件为
+                                                 ngx_http_wait_request_handler()
+                                                 ngx_http_empty_handler()
+                                            接收到报文请求头后, 读/写事件为
+                                                 ngx_http_process_request_line()
                                           */
 #if (NGX_HAVE_IOCP)
     ngx_event_ovlp_t ovlp;

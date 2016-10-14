@@ -181,11 +181,11 @@ ngx_event_module_t  ngx_epoll_module_ctx = {
     ngx_epoll_init_conf,                 /* init configuration */
 
     {
-        ngx_epoll_add_event,             /* add an event */
-        ngx_epoll_del_event,             /* delete an event */
+        ngx_epoll_add_event,             /* 添加监控事件到监控系统 */
+        ngx_epoll_del_event,             /* 从监控系统删除事件 */
         ngx_epoll_add_event,             /* enable an event */
         ngx_epoll_del_event,             /* disable an event */
-        ngx_epoll_add_connection,        /* add an connection */
+        ngx_epoll_add_connection,        /* 监控请求 */
         ngx_epoll_del_connection,        /* delete an connection */
 #if (NGX_HAVE_EVENTFD)
         ngx_epoll_notify,                /* trigger a notify */
@@ -588,7 +588,7 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     ngx_connection_t    *c;
     struct epoll_event   ee;
 
-    c = ev->data;
+    c = ev->data;                        /* 取得对应的请求连接信息结构 */
 
     events = (uint32_t) event;
 
@@ -596,39 +596,39 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
         e = c->write;
         prev = EPOLLOUT;
 #if (NGX_READ_EVENT != EPOLLIN|EPOLLRDHUP)
-        events = EPOLLIN|EPOLLRDHUP;
+        events = EPOLLIN|EPOLLRDHUP;     /* 读事件 */
 #endif
-
     } else {
         e = c->read;
         prev = EPOLLIN|EPOLLRDHUP;
 #if (NGX_WRITE_EVENT != EPOLLOUT)
-        events = EPOLLOUT;
+        events = EPOLLOUT;               /* 写事件 */
 #endif
     }
 
-    if (e->active) {
+    if (e->active) {                     /* 已经有过监听记录，则修改监听事件 */
         op = EPOLL_CTL_MOD;
         events |= prev;
-
     } else {
-        op = EPOLL_CTL_ADD;
+        op = EPOLL_CTL_ADD;              /* 否则添加 */
     }
 
+    /* <TAKE CARE!!!>注意此处传递的监听事件的数据指针，为ngx_connection_t */
     ee.events = events | (uint32_t) flags;
     ee.data.ptr = (void *) ((uintptr_t) c | ev->instance);
 
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0,
                    "epoll add event: fd:%d op:%d ev:%08XD",
                    c->fd, op, ee.events);
-
+    
+    /* 添加到epoll监控系统 */
     if (epoll_ctl(ep, op, c->fd, &ee) == -1) {
         ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_errno,
                       "epoll_ctl(%d, %d) failed", op, c->fd);
         return NGX_ERROR;
     }
 
-    ev->active = 1;
+    ev->active = 1;                      /* 已经加入到epoll监控系统 */
 #if 0
     ev->oneshot = (flags & NGX_ONESHOT_EVENT) ? 1 : 0;
 #endif
@@ -794,15 +794,13 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "epoll timer: %M", timer);
-    /* EPOLL监听指定的事件 */
+    /* 等待监听事件 */
     events = epoll_wait(ep, event_list, (int) nevents, timer);
-
     err = (events == -1) ? ngx_errno : 0;
 
     if (flags & NGX_UPDATE_TIME || ngx_event_timer_alarm) {
         ngx_time_update();
     }
-
     if (err) {
         if (err == NGX_EINTR) {
 
@@ -830,11 +828,12 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
                       "epoll_wait() returned no events without timeout");
         return NGX_ERROR;
     }
+    
     /* 处理监听事件 */
     for (i = 0; i < events; i++) {
         c = event_list[i].data.ptr;
 
-        instance = (uintptr_t) c & 1;
+        instance = (uintptr_t) c & 1;      /* 提取对应的请求信息结构 */
         c = (ngx_connection_t *) ((uintptr_t) c & (uintptr_t) ~1);
 
         rev = c->read;
@@ -883,8 +882,8 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             revents |= EPOLLIN|EPOLLOUT;
         }
 
+        /* 处理读事件 */
         if ((revents & EPOLLIN) && rev->active) {
-
 #if (NGX_HAVE_EPOLLRDHUP)
             if (revents & EPOLLRDHUP) {
                 rev->pending_eof = 1;
@@ -893,23 +892,21 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             rev->available = 1;
 #endif
 
-            rev->ready = 1;
-            /* 根据事件类型，放入不同队列 */
-            if (flags & NGX_POST_EVENTS) {
+            rev->ready = 1;                  /* 数据ok*/
+            if (flags & NGX_POST_EVENTS) {   /* 根据事件类型，放入不同队列 */
                 queue = rev->accept ? &ngx_posted_accept_events
                                     : &ngx_posted_events;
 
                 ngx_post_event(rev, queue);
 
             } else {
-                rev->handler(rev);
+                rev->handler(rev);           /* 单进程可直接处理 */
             }
         }
 
+        /* 处理读事件 */
         wev = c->write;
-
         if ((revents & EPOLLOUT) && wev->active) {
-
             if (c->fd == -1 || wev->instance != instance) {
 
                 /*

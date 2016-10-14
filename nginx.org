@@ -101,7 +101,9 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 * 高速IO模型
   - 初始化入口           : =ngx_event_process_init():~/src/event/ngx_event.c=
   - worker主循环处理入口 : =ngx_process_events_and_timers():~/src/event/ngx_event.c=
-  - 
+  - EPOLL事件处理入口    : =ngx_epoll_process_events():~/src/event/modules/ngx_epoll_module.c=
+  - ACCEPT事件处理入口   : =ngx_event_accept():~/src/event/ngx_event_accept.c=
+  
 
   #+BEGIN_EXAMPLE
   -ngx_init_cycle()
@@ -125,6 +127,15 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
                     -读、写信息链表
                     -建立监听链路结构与请求结构读对应关系
                     -设置ACCEPT事件处理句柄ngx_event_accept/ngx_event_recvmsg
+              -for(;;)                          worker处理循环
+                 -ngx_process_events_and_timers()
+                    -ngx_trylock_accept_mutex() 添加待监控链路到EPOLL系统
+                    -ngx_process_events()       处理
+                    -ngx_event_process_posted()
     #+END_EXAMPLE
+
+* HTTP请求处理
+  - 处理入口    : =ngx_http_init_connection():~/src/http/ngx_http_request.c=
+
 
 

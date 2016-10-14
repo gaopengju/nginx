@@ -44,7 +44,7 @@ ngx_uint_t            ngx_event_flags;
 ngx_event_actions_t   ngx_event_actions;         /* epoll方式，=ngx_epoll_module_ctx.actions */
 
 
-static ngx_atomic_t   connection_counter = 1;
+static ngx_atomic_t   connection_counter = 1;    /* 本进程的请求累积计数 */
 ngx_atomic_t         *ngx_connection_counter = &connection_counter;
 
 
@@ -225,7 +225,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
         if (ngx_accept_disabled > 0) {
             ngx_accept_disabled--;
         } else {
-            /* 接受accept前，加锁 */
+            /* 接受accept前，加锁；并添加监控链路到EPOLL系统 */
             if (ngx_trylock_accept_mutex(cycle) == NGX_ERROR) {
                 return;
             }
@@ -246,7 +246,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     delta = ngx_current_msec;
 
     /*处理事件, 加入对应的队列, ngx_posted_accept_events或ngx_posted_events, 
-      然后迅速返回*/
+      然后迅速返回；调用ngx_epoll_process_events() */
     (void) ngx_process_events(cycle, timer, flags);
 
     delta = ngx_current_msec - delta;

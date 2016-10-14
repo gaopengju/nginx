@@ -18,7 +18,7 @@ static void ngx_debug_accepted_connection(ngx_event_conf_t *ecf,
     ngx_connection_t *c);
 #endif
 
-
+/* ACCEPT处理事件入口 */
 void
 ngx_event_accept(ngx_event_t *ev)
 {
@@ -52,8 +52,7 @@ ngx_event_accept(ngx_event_t *ev)
 
     lc = ev->data;
     ls = lc->listening;
-    ev->ready = 0;
-
+    ev->ready = 0;                            /* 清理就绪标识 */
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, ev->log, 0,
                    "accept on %V, ready: %d", &ls->addr_text, ev->available);
 
@@ -61,7 +60,7 @@ ngx_event_accept(ngx_event_t *ev)
         socklen = sizeof(ngx_sockaddr_t);
 
 #if (NGX_HAVE_ACCEPT4)
-        if (use_accept4) {
+        if (use_accept4) {                    /* 调用accept()，接受请求 */
             s = accept4(lc->fd, &sa.sockaddr, &socklen, SOCK_NONBLOCK);
         } else {
             s = accept(lc->fd, &sa.sockaddr, &socklen);
@@ -138,11 +137,13 @@ ngx_event_accept(ngx_event_t *ev)
         (void) ngx_atomic_fetch_add(ngx_stat_accepted, 1);
 #endif
 
+        /* 如果空闲的请求结构总数 < 总量的1/8; 则抑制本worker进程继续接受
+           ACCEPT事件的数量，以达到各worker进程间负载均衡 */
         ngx_accept_disabled = ngx_cycle->connection_n / 8
                               - ngx_cycle->free_connection_n;
 
+        /* 分配请求信息结构，对应新到达的用户请求 */
         c = ngx_get_connection(s, ev->log);
-
         if (c == NULL) {
             if (ngx_close_socket(s) == -1) {
                 ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_socket_errno,
@@ -152,7 +153,7 @@ ngx_event_accept(ngx_event_t *ev)
             return;
         }
 
-        c->type = SOCK_STREAM;
+        c->type = SOCK_STREAM;         /* 设置插口类型，TCP连接 */
 
 #if (NGX_STAT_STUB)
         (void) ngx_atomic_fetch_add(ngx_stat_active, 1);
@@ -164,12 +165,12 @@ ngx_event_accept(ngx_event_t *ev)
             return;
         }
 
+        /* 保存客户端地址信息 */
         c->sockaddr = ngx_palloc(c->pool, socklen);
         if (c->sockaddr == NULL) {
             ngx_close_accepted_connection(c);
             return;
         }
-
         ngx_memcpy(c->sockaddr, &sa, socklen);
 
         log = ngx_palloc(c->pool, sizeof(ngx_log_t));
@@ -178,8 +179,7 @@ ngx_event_accept(ngx_event_t *ev)
             return;
         }
 
-        /* set a blocking mode for iocp and non-blocking mode for others */
-
+        /* 设置非阻塞模式，set a blocking mode for iocp and non-blocking mode for others */
         if (ngx_inherited_nonblocking) {
             if (ngx_event_flags & NGX_USE_IOCP_EVENT) {
                 if (ngx_blocking(s) == -1) {
@@ -189,7 +189,6 @@ ngx_event_accept(ngx_event_t *ev)
                     return;
                 }
             }
-
         } else {
             if (!(ngx_event_flags & NGX_USE_IOCP_EVENT)) {
                 if (ngx_nonblocking(s) == -1) {
@@ -203,6 +202,7 @@ ngx_event_accept(ngx_event_t *ev)
 
         *log = ls->log;
 
+        /* 设置对应的底层IO处理函数 */
         c->recv = ngx_recv;
         c->send = ngx_send;
         c->recv_chain = ngx_recv_chain;
@@ -211,6 +211,7 @@ ngx_event_accept(ngx_event_t *ev)
         c->log = log;
         c->pool->log = log;
 
+        /* 保存地址信息 */
         c->socklen = socklen;
         c->listening = ls;
         c->local_sockaddr = ls->sockaddr;
@@ -230,7 +231,7 @@ ngx_event_accept(ngx_event_t *ev)
         rev = c->read;
         wev = c->write;
 
-        wev->ready = 1;
+        wev->ready = 1;              /* 设置写事件的就绪标识 */
 
         if (ngx_event_flags & NGX_USE_IOCP_EVENT) {
             rev->ready = 1;
@@ -254,13 +255,13 @@ ngx_event_accept(ngx_event_t *ev)
          *           - ngx_atomic_fetch_add()
          *             or protection by critical section or light mutex
          */
-
+        /* 设置处理的请求计数 */
         c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
 
 #if (NGX_STAT_STUB)
         (void) ngx_atomic_fetch_add(ngx_stat_handled, 1);
 #endif
-
+        /* 记录peer地址的可读模式 */
         if (ls->addr_ntop) {
             c->addr_text.data = ngx_pnalloc(c->pool, ls->addr_text_max_len);
             if (c->addr_text.data == NULL) {
@@ -306,13 +307,13 @@ ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
+        /* 调用对应的处理函数，ngx_http_init_connection() */
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {
             ev->available--;
         }
-
-    } while (ev->available);
+    } while (ev->available);    /* 对应配置"multi_accept on;" */
 }
 
 
@@ -647,7 +648,7 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
             return NGX_OK;
         }
 
-        /* 添加listening结构体 */
+        /* 添加listening结构体的ACCEPT事件处理到EPOLL系统 */
         if (ngx_enable_accept_events(cycle) == NGX_ERROR) {
             ngx_shmtx_unlock(&ngx_accept_mutex);
             return NGX_ERROR;
@@ -675,7 +676,7 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
     return NGX_OK;
 }
 
-
+/* 抢到ACCEPT锁后，添加待监控的ACCEPT链路 */
 static ngx_int_t
 ngx_enable_accept_events(ngx_cycle_t *cycle)
 {
@@ -691,7 +692,7 @@ ngx_enable_accept_events(ngx_cycle_t *cycle)
         if (c == NULL || c->read->active) {
             continue;
         }
-
+        /* 调用此函数ngx_epoll_add_event() */
         if (ngx_add_event(c->read, NGX_READ_EVENT, 0) == NGX_ERROR) {
             return NGX_ERROR;
         }
