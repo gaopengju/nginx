@@ -358,7 +358,7 @@ struct ngx_http_posted_request_s {
     ngx_http_posted_request_t        *next;
 };
 
-
+/* */
 typedef ngx_int_t (*ngx_http_handler_pt)(ngx_http_request_t *r);
 typedef void (*ngx_http_event_handler_pt)(ngx_http_request_t *r);
 

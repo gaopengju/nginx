@@ -835,7 +835,7 @@ ngx_http_handler(ngx_http_request_t *r)
     ngx_http_core_run_phases(r);
 }
 
-
+/* 各阶段回调函数执行入口 */
 void
 ngx_http_core_run_phases(ngx_http_request_t *r)
 {
@@ -850,7 +850,11 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
     while (ph[r->phase_handler].checker) {
 
         rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
-
+        /* NGX_OK: 当前阶段处理OK，进入下一阶段
+           NGX_DECLINED: 当前回调不处理此情况，进入同阶段下一个回调
+           NGX_AGAIN: 当前处理所需资源不足，需等待依赖的事件发生
+           NGX_DONE: 当前处理结束，仍需等待进一步事件发生后再做处理
+           NGX_ERROR/...: 各种错误，需要进入异常处理 */
         if (rc == NGX_OK) {
             return;
         }

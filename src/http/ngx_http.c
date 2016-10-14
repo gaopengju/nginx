@@ -440,7 +440,9 @@ ngx_http_init_headers_in_hash(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     return NGX_OK;
 }
 
-
+/* nginx的phase handler优化排序入口；把各模块儿ngx_module_t->ctx->postconfiguration()
+   阶段注册的各阶段处理指针，按照预设逻辑，重新编排成一维指针数组，以便后续执行
+   加速 */
 static ngx_int_t
 ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 {
@@ -457,6 +459,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     use_rewrite = cmcf->phases[NGX_HTTP_REWRITE_PHASE].handlers.nelts ? 1 : 0;
     use_access = cmcf->phases[NGX_HTTP_ACCESS_PHASE].handlers.nelts ? 1 : 0;
 
+    /* 计算执行阶段的函数指针数，并分配内存 */
     n = use_rewrite + use_access + cmcf->try_files + 1 /* find config phase */;
 
     for (i = 0; i < NGX_HTTP_LOG_PHASE; i++) {
@@ -468,10 +471,10 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     if (ph == NULL) {
         return NGX_ERROR;
     }
-
     cmcf->phase_engine.handlers = ph;
     n = 0;
 
+    /* 重新排序注册的阶段处理指针 */
     for (i = 0; i < NGX_HTTP_LOG_PHASE; i++) {
         h = cmcf->phases[i].handlers.elts;
 
@@ -489,7 +492,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
             find_config_index = n;
 
             ph->checker = ngx_http_core_find_config_phase;
-            n++;
+            n++;                           /* 此阶段不允许注册回调 */
             ph++;
 
             continue;
@@ -506,7 +509,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
             if (use_rewrite) {
                 ph->checker = ngx_http_core_post_rewrite_phase;
                 ph->next = find_config_index;
-                n++;
+                n++;                       /* 此阶段不允许注册回调 */
                 ph++;
             }
 
@@ -520,7 +523,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         case NGX_HTTP_POST_ACCESS_PHASE:
             if (use_access) {
                 ph->checker = ngx_http_core_post_access_phase;
-                ph->next = n;
+                ph->next = n;              /* 此阶段不允许注册回调 */
                 ph++;
             }
 
@@ -529,7 +532,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         case NGX_HTTP_TRY_FILES_PHASE:
             if (cmcf->try_files) {
                 ph->checker = ngx_http_core_try_files_phase;
-                n++;
+                n++;                       /* 此阶段不允许注册回调 */
                 ph++;
             }
 
@@ -544,11 +547,10 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         }
 
         n += cmcf->phases[i].handlers.nelts;
-
         for (j = cmcf->phases[i].handlers.nelts - 1; j >=0; j--) {
             ph->checker = checker;
             ph->handler = h[j];
-            ph->next = n;
+            ph->next = n;                      /* 指向下一阶段的起始索引 */
             ph++;
         }
     }

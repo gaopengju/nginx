@@ -105,25 +105,38 @@ typedef struct {
     u_char                     addr[NGX_SOCKADDR_STRLEN + 1];   /* ip地址的可读格式 */
 } ngx_http_listen_opt_t;
 
-
+/*读取完请求头后，nginx进入请求的处理阶段；简单的情况下，客户端发送过的统一资
+  源定位符(url)对应服务器上某一路径上的资源，web服务器需要做的仅仅是将url映射
+  到本地文件系统的路径，然后读取相应文件并返回给客户端。但这仅仅是最初的互联
+  网的需求，而如今互联网出现了各种各样复杂的需求，要求web服务器能够处理诸如安
+  全及权限控制，多媒体内容和动态网页等等问题。这些复杂的需求导致web服务器不再
+  是一个短小的程序，而变成了一个必须经过仔细设计，模块化的系统。nginx良好的模
+  块化特性体现在其对请求处理流程的多阶段划分当中，多阶段处理流程就好像一条流
+  水线，一个nginx进程可以并发的处理处于不同阶段的多个请求。nginx允许开发者在
+  处理流程的任意阶段注册模块，在启动阶段，nginx会把各个阶段注册的所有模块处理
+  函数按序的组织成一条执行链。*/
 typedef enum {
-    NGX_HTTP_POST_READ_PHASE = 0,
+    NGX_HTTP_POST_READ_PHASE = 0,    /* 请求头读取完之后；nginx读取并解析完
+                                        请求头以后执行回调函数 */
 
-    NGX_HTTP_SERVER_REWRITE_PHASE,
+    NGX_HTTP_SERVER_REWRITE_PHASE,   /* server内请求地址重写；定位到server以后
+                                        执行回调 */
 
-    NGX_HTTP_FIND_CONFIG_PHASE,
-    NGX_HTTP_REWRITE_PHASE,
-    NGX_HTTP_POST_REWRITE_PHASE,
+    NGX_HTTP_FIND_CONFIG_PHASE,      /* 配置查找阶段；定位location；
+                                        <NOTE>不能挂接回调函数 */
+    NGX_HTTP_REWRITE_PHASE,          /* location内请求地址重写 */
+    NGX_HTTP_POST_REWRITE_PHASE,     /* 请求地址重写完成之后；
+                                        <NOTE>不能挂接回调函数 */
 
-    NGX_HTTP_PREACCESS_PHASE,
+    NGX_HTTP_PREACCESS_PHASE,        /* 访问权限检查准备阶段 */
 
-    NGX_HTTP_ACCESS_PHASE,
-    NGX_HTTP_POST_ACCESS_PHASE,
+    NGX_HTTP_ACCESS_PHASE,           /* 访问权限检查阶段 */
+    NGX_HTTP_POST_ACCESS_PHASE,      /* 访问权限检查完成之后的阶段 */
 
-    NGX_HTTP_TRY_FILES_PHASE,
-    NGX_HTTP_CONTENT_PHASE,
+    NGX_HTTP_TRY_FILES_PHASE,        /* 配置项try_files处理阶段 */
+    NGX_HTTP_CONTENT_PHASE,          /* 内容生成阶段 */
 
-    NGX_HTTP_LOG_PHASE
+    NGX_HTTP_LOG_PHASE               /* 日志模块儿处理阶段 */
 } ngx_http_phases;
 
 typedef struct ngx_http_phase_handler_s  ngx_http_phase_handler_t;
@@ -132,14 +145,21 @@ typedef ngx_int_t (*ngx_http_phase_handler_pt)(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph);
 
 struct ngx_http_phase_handler_s {
-    ngx_http_phase_handler_pt  checker;
-    ngx_http_handler_pt        handler;
-    ngx_uint_t                 next;
+    ngx_http_phase_handler_pt  checker;    /* 辅助函数，判断是否执行handler */
+    ngx_http_handler_pt        handler;    /* 回调函数，有多种返回值
+                                                NGX_OK: 当前阶段处理OK，进入下一阶段
+                                                NGX_DECLINED: 当前回调不处理此情况，进入同阶段下一个回调
+                                                NGX_AGAIN: 当前处理所需资源不足，需等待依赖的事件发生
+                                                NGX_DONE: 当前处理结束，仍需等待进一步事件发生后再做处理
+                                                NGX_ERROR/...: 各种错误，需要进入异常处理
+                                            */
+    ngx_uint_t                 next;       /* 类似于静态链表，实现阶段间跳转；
+                                              指向下一阶段的起始索引 */
 };
 
 
 typedef struct {
-    ngx_http_phase_handler_t  *handlers;
+    ngx_http_phase_handler_t  *handlers;                 /* 一维的指针数组 */
     ngx_uint_t                 server_rewrite_index;
     ngx_uint_t                 location_rewrite_index;
 } ngx_http_phase_engine_t;
@@ -152,13 +172,27 @@ typedef struct {
 /* ngx_http_core_module的http{}环境的main_conf配置 */
 typedef struct {
     ngx_array_t                servers;         /* server{}配置数组，ngx_http_core_srv_conf_t */
-
+    
+    /* 根据->phases[]生成的最终函数指针列表；
+          1) 从二维变一维，以加速； 
+          2) 添加判断是否执行回调的checker函数； */
     ngx_http_phase_engine_t    phase_engine;
-
+    
+    /*各模块儿对http特定头的处理回调
+                                    如, http模块的
+                                        ngx_http_headers_in[]
+                                    upstream模块儿的
+                                        ngx_http_upstream_headers_in[]*/
     ngx_hash_t                 headers_in_hash;
 
+    /* 由->variables_keys构造的hash数组
+                                    ngx_http_variable_t->index =
+                                    对应其在(variables[])中的数组索引*/
     ngx_hash_t                 variables_hash;
 
+    /* 包括: 解析配置文件时，被使用到的变量; 
+                                    及内置在代码中的变量; 
+                                    类型ngx_http_variable_t */
     ngx_array_t                variables;       /* ngx_http_variable_t */
     ngx_uint_t                 ncaptures;
 
@@ -168,12 +202,20 @@ typedef struct {
     ngx_uint_t                 variables_hash_max_size;
     ngx_uint_t                 variables_hash_bucket_size;
 
+    /* 可配置变量的hash数组, 包括
+                                    ngx_http_core_variables[], 其他模块
+                                    儿支持的变量在初始化时也将注册进来;
+                                    解析完毕后, 此内存会被释放, = NULL*/
     ngx_hash_keys_arrays_t    *variables_keys;
 
     ngx_array_t               *ports;           /* listen监听端口数组，ngx_http_conf_port_t */
 
     ngx_uint_t                 try_files;       /* unsigned  try_files:1 */
 
+    /* 阶段处理函数数组, 由各模块儿ngx_module_t->ctx->postconfiguration()注册；
+       注册的回调句柄在函数ngx_http_core_run_phases()被执行时, 依照返回值不同, 
+       影响同一阶段的其他句柄执行; 由于先注册的模块其回调反而后执行, 即后进先出,
+       因此模块儿注册的顺序非常重要; 逻辑上执行顺序靠前的模块儿需要后注册 */
     ngx_http_phase_t           phases[NGX_HTTP_LOG_PHASE + 1];
 } ngx_http_core_main_conf_t;
 
@@ -445,7 +487,9 @@ struct ngx_http_core_loc_conf_s {
     ngx_uint_t    types_hash_max_size;
     ngx_uint_t    types_hash_bucket_size;
 
-    ngx_queue_t  *locations;
+    ngx_queue_t  *locations;               /* 对应http{server{}}中出现的
+                                                所有location配置队列, 或
+                                                者嵌套的location配置*/
 
 #if 0
     ngx_http_core_loc_conf_t  *prev_location;
