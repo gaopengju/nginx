@@ -167,13 +167,13 @@ struct ngx_connection_s {
     struct sockaddr    *local_sockaddr;  /* 本连接绑定的本机地址 */
     socklen_t           local_socklen;
 
-    ngx_buf_t          *buffer;          /* 报文缓存 */
+    ngx_buf_t          *buffer;          /* 请求报文缓存 */
 
     ngx_queue_t         queue;
 
     ngx_atomic_uint_t   number;          /* 本结构对应的请求index，从1开始的实时计数值 */
 
-    ngx_uint_t          requests;
+    ngx_uint_t          requests;        /* 本结构处理的总请求数，调试用？？？ */
 
     unsigned            buffered:8;
 

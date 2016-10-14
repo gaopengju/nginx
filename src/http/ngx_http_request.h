@@ -299,8 +299,8 @@ typedef struct {
 typedef struct ngx_http_addr_conf_s  ngx_http_addr_conf_t;
 
 typedef struct {
-    ngx_http_addr_conf_t             *addr_conf;
-    ngx_http_conf_ctx_t              *conf_ctx;
+    ngx_http_addr_conf_t             *addr_conf;        /* 虚拟主机对应的地址配置信息 */
+    ngx_http_conf_ctx_t              *conf_ctx;         /* 默认主机的配置信息结构 */
 
 #if (NGX_HTTP_SSL && defined SSL_CTRL_SET_TLSEXT_HOSTNAME)
     ngx_str_t                        *ssl_servername;
@@ -362,14 +362,14 @@ struct ngx_http_posted_request_s {
 typedef ngx_int_t (*ngx_http_handler_pt)(ngx_http_request_t *r);
 typedef void (*ngx_http_event_handler_pt)(ngx_http_request_t *r);
 
-
+/* 对应请求的信息结构 */
 struct ngx_http_request_s {
     uint32_t                          signature;         /* "HTTP" */
 
-    ngx_connection_t                 *connection;
+    ngx_connection_t                 *connection;        /* 指向当前的请求连接 */
 
     void                            **ctx;
-    void                            **main_conf;
+    void                            **main_conf;         /* 默认虚拟服务器的配置信息 */
     void                            **srv_conf;
     void                            **loc_conf;
 
@@ -385,7 +385,8 @@ struct ngx_http_request_s {
                                          /* of ngx_http_upstream_state_t */
 
     ngx_pool_t                       *pool;
-    ngx_buf_t                        *header_in;
+    ngx_buf_t                        *header_in;       /* 当前处理的头部缓存位置，
+                                                          一般指向ngx_connection_t->buffer */
 
     ngx_http_headers_in_t             headers_in;
     ngx_http_headers_out_t            headers_out;
@@ -437,7 +438,7 @@ struct ngx_http_request_s {
 
     ngx_uint_t                        err_status;
 
-    ngx_http_connection_t            *http_connection;
+    ngx_http_connection_t            *http_connection;     /* http相关的连接信息 */
 #if (NGX_HTTP_V2)
     ngx_http_v2_stream_t             *stream;
 #endif

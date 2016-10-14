@@ -194,7 +194,7 @@ ngx_http_header_t  ngx_http_headers_in[] = {
     { ngx_null_string, 0, NULL }
 };
 
-/* HTTP的处理入口 */
+/* HTTP的处理入口，处理ACCEPT事件后，即进入此处理函数 */
 void
 ngx_http_init_connection(ngx_connection_t *c)
 {
@@ -210,33 +210,30 @@ ngx_http_init_connection(ngx_connection_t *c)
     ngx_http_in6_addr_t    *addr6;
 #endif
 
+    /* 分配HTTP数据跟踪结构 */
     hc = ngx_pcalloc(c->pool, sizeof(ngx_http_connection_t));
     if (hc == NULL) {
         ngx_http_close_connection(c);
         return;
     }
-
     c->data = hc;
 
-    /* find the server configuration for the address:port */
-
+    /* 查找此请求对应的虚拟主机的地址结构 */
     port = c->listening->servers;
-
     if (port->naddrs > 1) {
-
         /*
          * there are several addresses on this port and one of them
          * is an "*:port" wildcard so getsockname() in ngx_http_server_addr()
          * is required to determine a server address
+         * 
+         * 获取接收此请求的地址和端口
          */
-
         if (ngx_connection_local_sockaddr(c, NULL, 0) != NGX_OK) {
             ngx_http_close_connection(c);
             return;
         }
 
         switch (c->local_sockaddr->sa_family) {
-
 #if (NGX_HAVE_INET6)
         case AF_INET6:
             sin6 = (struct sockaddr_in6 *) c->local_sockaddr;
@@ -261,8 +258,8 @@ ngx_http_init_connection(ngx_connection_t *c)
 
             addr = port->addrs;
 
-            /* the last address is "*" */
-
+            /* 搜索对应的虚拟主机的地址配置信息；最后一个为统配，一般都ok；
+               the last address is "*" */
             for (i = 0; i < port->naddrs - 1; i++) {
                 if (addr[i].addr == sin->sin_addr.s_addr) {
                     break;
@@ -273,7 +270,6 @@ ngx_http_init_connection(ngx_connection_t *c)
 
             break;
         }
-
     } else {
 
         switch (c->local_sockaddr->sa_family) {
@@ -292,7 +288,7 @@ ngx_http_init_connection(ngx_connection_t *c)
         }
     }
 
-    /* the default server configuration for the address:port */
+    /* 利用默认虚拟服务器的配置信息，the default server configuration for the address:port */
     hc->conf_ctx = hc->addr_conf->default_server->ctx;
 
     ctx = ngx_palloc(c->pool, sizeof(ngx_http_log_ctx_t));
@@ -312,6 +308,7 @@ ngx_http_init_connection(ngx_connection_t *c)
 
     c->log_error = NGX_ERROR_INFO;
 
+    /* 设置信息处理句柄 */
     rev = c->read;
     rev->handler = ngx_http_wait_request_handler;
     c->write->handler = ngx_http_empty_handler;
@@ -352,18 +349,21 @@ ngx_http_init_connection(ngx_connection_t *c)
         c->log->action = "reading PROXY protocol";
     }
 
+    /* <Bang!!!>加入EPOLL IO系统 */
     if (rev->ready) {
-        /* the deferred accept(), iocp */
-
+        /* 因为此时的处理流程是在持有ACCEPT锁的情况下，代价较大； 直接放入
+           队列，等待后续释放锁以后再处理； the deferred accept(), iocp */
         if (ngx_use_accept_mutex) {
             ngx_post_event(rev, &ngx_posted_events);
             return;
         }
 
+        /* 直接处理 */
         rev->handler(rev);
         return;
     }
 
+    /* 无数据 */
     ngx_add_timer(rev, c->listening->post_accept_timeout);
     ngx_reusable_connection(c, 1);
 
@@ -373,7 +373,7 @@ ngx_http_init_connection(ngx_connection_t *c)
     }
 }
 
-
+/* ACCEPT后，接收请求头数据 */
 static void
 ngx_http_wait_request_handler(ngx_event_t *rev)
 {
@@ -405,8 +405,8 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
 
     size = cscf->client_header_buffer_size;
 
+    /* 分配内存，盛放报文数据 */
     b = c->buffer;
-
     if (b == NULL) {
         b = ngx_create_temp_buf(c->pool, size);
         if (b == NULL) {
@@ -415,9 +415,7 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
         }
 
         c->buffer = b;
-
     } else if (b->start == NULL) {
-
         b->start = ngx_palloc(c->pool, size);
         if (b->start == NULL) {
             ngx_http_close_connection(c);
@@ -429,10 +427,9 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
         b->end = b->last + size;
     }
 
+    /* 接收数据 */
     n = c->recv(c, b->last, size);
-
     if (n == NGX_AGAIN) {
-
         if (!rev->timer_set) {
             ngx_add_timer(rev, c->listening->post_accept_timeout);
             ngx_reusable_connection(c, 1);
@@ -468,6 +465,7 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
 
     b->last += n;
 
+    /* proxy协议？？？ */
     if (hc->proxy_protocol) {
         hc->proxy_protocol = 0;
 
@@ -491,14 +489,17 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
 
     c->log->action = "reading client request line";
 
+    /* 设定当前的请求连接不可重用，即不能被其他worker进程抢占 */
     ngx_reusable_connection(c, 0);
 
+    /* 创建请求头 */
     c->data = ngx_http_create_request(c);
     if (c->data == NULL) {
         ngx_http_close_connection(c);
         return;
     }
 
+    /* 设置请求行处理句柄 */
     rev->handler = ngx_http_process_request_line;
     ngx_http_process_request_line(rev);
 }
@@ -527,6 +528,7 @@ ngx_http_create_request(ngx_connection_t *c)
         return NULL;
     }
 
+    /* 分配描述请求信息结构，并初始化 */
     r = ngx_pcalloc(pool, sizeof(ngx_http_request_t));
     if (r == NULL) {
         ngx_destroy_pool(pool);
@@ -913,7 +915,7 @@ ngx_http_ssl_servername(ngx_ssl_conn_t *ssl_conn, int *ad, void *arg)
 
 #endif
 
-
+/* 处理请求行 */
 static void
 ngx_http_process_request_line(ngx_event_t *rev)
 {
@@ -948,12 +950,10 @@ ngx_http_process_request_line(ngx_event_t *rev)
             }
         }
 
+        /* 请求行解析入口 */
         rc = ngx_http_parse_request_line(r, r->header_in);
-
         if (rc == NGX_OK) {
-
             /* the request line has been parsed successfully */
-
             r->request_line.len = r->request_end - r->request_start;
             r->request_line.data = r->request_start;
             r->request_length = r->header_in->pos - r->request_start;
@@ -968,10 +968,12 @@ ngx_http_process_request_line(ngx_event_t *rev)
                 r->http_protocol.len = r->request_end - r->http_protocol.data;
             }
 
+            /* 解析URI */
             if (ngx_http_process_request_uri(r) != NGX_OK) {
                 return;
             }
 
+            /* 查找对应的虚拟服务器，并更请求结构中的配置结构 */
             if (r->host_start && r->host_end) {
 
                 host.len = r->host_end - r->host_start;
@@ -1022,6 +1024,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
 
             c->log->action = "reading client request headers";
 
+            /* 设置下一阶段的处理句柄，并处理 */
             rev->handler = ngx_http_process_request_headers;
             ngx_http_process_request_headers(rev);
 
@@ -1179,7 +1182,7 @@ ngx_http_process_request_uri(ngx_http_request_t *r)
     return NGX_OK;
 }
 
-
+/* HTTP请求头处理 */
 static void
 ngx_http_process_request_headers(ngx_event_t *rev)
 {
@@ -1343,6 +1346,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
                 return;
             }
 
+            /* 头部解析结束，正式处理请求 */
             ngx_http_process_request(r);
 
             return;
@@ -1834,7 +1838,7 @@ ngx_http_process_request_header(ngx_http_request_t *r)
     return NGX_OK;
 }
 
-
+/* HTTP头部解析结束后，处理请求 */
 void
 ngx_http_process_request(ngx_http_request_t *r)
 {
@@ -1907,12 +1911,15 @@ ngx_http_process_request(ngx_http_request_t *r)
     r->stat_writing = 1;
 #endif
 
+    /* 设置处理句柄 */
     c->read->handler = ngx_http_request_handler;
     c->write->handler = ngx_http_request_handler;
     r->read_event_handler = ngx_http_block_reading;
 
+    /* 进入各注册阶段处理 */
     ngx_http_handler(r);
 
+    /* 请求处理完毕，后续处理？？？ */
     ngx_http_run_posted_requests(c);
 }
 

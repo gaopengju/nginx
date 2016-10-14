@@ -1318,6 +1318,7 @@ ngx_connection_local_sockaddr(ngx_connection_t *c, ngx_str_t *s,
         }
     }
 
+    /* 如果没有记录接收请求的地址，则在此获取 */
     if (addr == 0) {
 
         len = sizeof(ngx_sockaddr_t);
@@ -1341,6 +1342,7 @@ ngx_connection_local_sockaddr(ngx_connection_t *c, ngx_str_t *s,
         return NGX_OK;
     }
 
+    /* 填充返回参数 */
     s->len = ngx_sock_ntop(c->local_sockaddr, c->local_socklen,
                            s->data, s->len, port);
 
