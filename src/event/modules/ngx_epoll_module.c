@@ -892,7 +892,7 @@ ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
             rev->available = 1;
 #endif
 
-            rev->ready = 1;                  /* 数据ok*/
+            rev->ready = 1;                  /* 数据ok */
             if (flags & NGX_POST_EVENTS) {   /* 根据事件类型，放入不同队列 */
                 queue = rev->accept ? &ngx_posted_accept_events
                                     : &ngx_posted_events;

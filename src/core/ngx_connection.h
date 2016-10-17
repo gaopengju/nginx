@@ -127,8 +127,8 @@ typedef enum {
 
 struct ngx_connection_s {
     void               *data;   /* 空闲时, 作为单链表指针的next;
-                                   建立链接后, 指向具体协议, ngx_http_connection_t;
-                                   接收到数据后, 指向请求, ngx_http_request_t;
+                                   建立链接后, 指向具体协议连接信息, ngx_http_connection_t;
+                                   接收到数据解析处理请求时, 指向请求信息结构ngx_http_request_t;
                                  */
     ngx_event_t        *read;   /* 读事件，对应ngx_cycle->read_events[] */
     ngx_event_t        *write;  /* 写事件，对应ngx_cycle->write_events[] 

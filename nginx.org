@@ -163,11 +163,14 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
     #+END_EXAMPLE
 
 * HTTP请求处理
-  - 处理入口    :: =ngx_http_init_connection():~/src/http/ngx_http_request.c=
-  - 接收请求头  :: =ngx_http_wait_request_handler()=
-  - 处理请求行  :: =ngx_http_process_request_line()=
-  - 处理请求头  :: =ngx_http_process_request_headers()=
-  - 处理请求    :: =ngx_http_process_request()=
+以下函数列表顺序，代表了HTTP请求的处理顺序
+  - 处理入口             :: =ngx_http_init_connection():~/src/http/ngx_http_request.c=
+  - 接收请求头           :: =ngx_http_wait_request_handler()=
+  - 处理请求行           :: =ngx_http_process_request_line()=
+  - 处理请求头           :: =ngx_http_process_request_headers()=
+  - HTTP请求处理入口     :: =ngx_http_process_request()=
+  - phase handler入口    :: =ngx_http_core_run_phases()=
+  - 当前处理完毕后       :: =ngx_http_run_posted_requests()=
 
 
 

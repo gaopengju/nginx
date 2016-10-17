@@ -800,6 +800,7 @@ ngx_http_handler(ngx_http_request_t *r)
 
     r->connection->log->action = NULL;
 
+    /* 根据connection头部确定长链接标识 */
     if (!r->internal) {
         switch (r->headers_in.connection_type) {
         case 0:
@@ -817,9 +818,9 @@ ngx_http_handler(ngx_http_request_t *r)
 
         r->lingering_close = (r->headers_in.content_length_n > 0
                               || r->headers_in.chunked);
-        r->phase_handler = 0;
-
+        r->phase_handler = 0;             /* phase handler从0开始 */
     } else {
+        /* 自请求，phase handler从server改写开始 */
         cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
         r->phase_handler = cmcf->phase_engine.server_rewrite_index;
     }
@@ -836,7 +837,7 @@ ngx_http_handler(ngx_http_request_t *r)
     ngx_http_core_run_phases(r);
 }
 
-/* 各阶段回调函数执行入口 */
+/* phase handler回调函数执行入口 */
 void
 ngx_http_core_run_phases(ngx_http_request_t *r)
 {

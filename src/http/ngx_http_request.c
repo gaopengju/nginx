@@ -76,7 +76,8 @@ static char *ngx_http_client_errors[] = {
     "client sent invalid method in HTTP/0.9 request"
 };
 
-
+/* HTTP头的处理回调函数，初始化ngx_http_request_t->headers_in
+   结构的指针变量; 指向的地址为ngx_http_request_t->headers_in->headers链表对象 */
 ngx_http_header_t  ngx_http_headers_in[] = {
     { ngx_string("Host"), offsetof(ngx_http_headers_in_t, host),
                  ngx_http_process_host },
@@ -308,7 +309,7 @@ ngx_http_init_connection(ngx_connection_t *c)
 
     c->log_error = NGX_ERROR_INFO;
 
-    /* 设置信息处理句柄 */
+    /* 设置信息处理句柄：等待并接收请求头 */
     rev = c->read;
     rev->handler = ngx_http_wait_request_handler;
     c->write->handler = ngx_http_empty_handler;
@@ -373,7 +374,7 @@ ngx_http_init_connection(ngx_connection_t *c)
     }
 }
 
-/* ACCEPT后，接收请求头数据 */
+/* ACCEPT事件后，等待并接收请求头数据 */
 static void
 ngx_http_wait_request_handler(ngx_event_t *rev)
 {
@@ -403,7 +404,7 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
     hc = c->data;
     cscf = ngx_http_get_module_srv_conf(hc->conf_ctx, ngx_http_core_module);
 
-    size = cscf->client_header_buffer_size;
+    size = cscf->client_header_buffer_size;         /* 默认1024 */
 
     /* 分配内存，盛放报文数据 */
     b = c->buffer;
@@ -915,7 +916,15 @@ ngx_http_ssl_servername(ngx_ssl_conn_t *ssl_conn, int *ad, void *arg)
 
 #endif
 
-/* 处理请求行 */
+/* 处理请求行
+   request = request-line
+             *( (general-header
+                reqeust-header
+                entity-heander) CRLF)
+             CRLF
+             message-body
+
+   request-line = Method SP request-url SP http-version CRLF */
 static void
 ngx_http_process_request_line(ngx_event_t *rev)
 {
@@ -925,7 +934,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
     ngx_connection_t    *c;
     ngx_http_request_t  *r;
 
-    c = rev->data;
+    c = rev->data;                  /* 获取连接相关信息结构 */
     r = c->data;
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, rev->log, 0,
@@ -941,7 +950,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
     rc = NGX_AGAIN;
 
     for ( ;; ) {
-
+        /* 进一步读取待处理数据 */
         if (rc == NGX_AGAIN) {
             n = ngx_http_read_request_header(r);
 
@@ -950,10 +959,11 @@ ngx_http_process_request_line(ngx_event_t *rev)
             }
         }
 
-        /* 请求行解析入口 */
+        /* 解析请求行，信息记录在ngx_http_request_t中 */
         rc = ngx_http_parse_request_line(r, r->header_in);
+        /* 解析完毕 */
         if (rc == NGX_OK) {
-            /* the request line has been parsed successfully */
+            /* 进一步记录并初始化相关信息 */
             r->request_line.len = r->request_end - r->request_start;
             r->request_line.data = r->request_start;
             r->request_length = r->header_in->pos - r->request_start;
@@ -1000,6 +1010,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
                 r->headers_in.server = host;
             }
 
+            /* 对于HTTP1.0以前的请求特殊处理 */
             if (r->http_version < NGX_HTTP_VERSION_10) {
 
                 if (r->headers_in.server.len == 0
@@ -1024,7 +1035,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
 
             c->log->action = "reading client request headers";
 
-            /* 设置下一阶段的处理句柄，并处理 */
+            /* 设置下一阶段的处理句柄，并处理：解析请求头 */
             rev->handler = ngx_http_process_request_headers;
             ngx_http_process_request_headers(rev);
 
@@ -1065,7 +1076,7 @@ ngx_http_process_request_line(ngx_event_t *rev)
     }
 }
 
-
+/* 解析请求头的URI信息 */
 ngx_int_t
 ngx_http_process_request_uri(ngx_http_request_t *r)
 {
@@ -1182,7 +1193,15 @@ ngx_http_process_request_uri(ngx_http_request_t *r)
     return NGX_OK;
 }
 
-/* HTTP请求头处理 */
+/* HTTP请求头处理
+   request = request-line
+             *( (general-header
+                reqeust-header
+                entity-heander) CRLF)
+             CRLF
+             message-body
+
+   request-line = Method SP request-url SP http-version CRLF */
 static void
 ngx_http_process_request_headers(ngx_event_t *rev)
 {
@@ -1215,9 +1234,8 @@ ngx_http_process_request_headers(ngx_event_t *rev)
     rc = NGX_AGAIN;
 
     for ( ;; ) {
-
+        /* 读取请求数据 */
         if (rc == NGX_AGAIN) {
-
             if (r->header_in->pos == r->header_in->end) {
 
                 rv = ngx_http_alloc_large_header_buffer(r, 0);
@@ -1265,10 +1283,10 @@ ngx_http_process_request_headers(ngx_event_t *rev)
 
         /* the host header could change the server configuration context */
         cscf = ngx_http_get_module_srv_conf(r, ngx_http_core_module);
-
+        
+        /* 以行为单位解析头部字段, 并存放在ngx_http_request_t->headers_in->headers链表中 */
         rc = ngx_http_parse_header_line(r, r->header_in,
                                         cscf->underscores_in_headers);
-
         if (rc == NGX_OK) {
 
             r->request_length += r->header_in->pos - r->header_name_start;
@@ -1284,8 +1302,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
                 continue;
             }
 
-            /* a header line has been parsed successfully */
-
+            /* 已经正确解析了某个HTTP头部，记录在ngx_http_request_t->headers_in.headers链表中 */
             h = ngx_list_push(&r->headers_in.headers);
             if (h == NULL) {
                 ngx_http_close_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
@@ -1314,10 +1331,10 @@ ngx_http_process_request_headers(ngx_event_t *rev)
             } else {
                 ngx_strlow(h->lowcase_key, h->key.data, h->key.len);
             }
-
+            
+            /* 请求头有对应的回调处理函数，则执行它 */
             hh = ngx_hash_find(&cmcf->headers_in_hash, h->hash,
                                h->lowcase_key, h->key.len);
-
             if (hh && hh->handler(r, h, hh->offset) != NGX_OK) {
                 return;
             }
@@ -1325,7 +1342,6 @@ ngx_http_process_request_headers(ngx_event_t *rev)
             ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                            "http header: \"%V: %V\"",
                            &h->key, &h->value);
-
             continue;
         }
 
@@ -1346,7 +1362,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
                 return;
             }
 
-            /* 头部解析结束，正式处理请求 */
+            /* 头部解析结束，进入phase handler处理 */
             ngx_http_process_request(r);
 
             return;
@@ -1363,7 +1379,7 @@ ngx_http_process_request_headers(ngx_event_t *rev)
 
         ngx_log_error(NGX_LOG_INFO, c->log, 0,
                       "client sent invalid header line");
-
+        
         ngx_http_finalize_request(r, NGX_HTTP_BAD_REQUEST);
         return;
     }
@@ -1838,7 +1854,7 @@ ngx_http_process_request_header(ngx_http_request_t *r)
     return NGX_OK;
 }
 
-/* HTTP头部解析结束后，处理请求 */
+/* HTTP头部解析结束后，phase handler处理 */
 void
 ngx_http_process_request(ngx_http_request_t *r)
 {
@@ -1919,7 +1935,7 @@ ngx_http_process_request(ngx_http_request_t *r)
     /* 进入各注册阶段处理 */
     ngx_http_handler(r);
 
-    /* 请求处理完毕，后续处理？？？ */
+    /* 请求处理完毕，后续子请求处理 */
     ngx_http_run_posted_requests(c);
 }
 
@@ -2208,7 +2224,7 @@ ngx_http_request_handler(ngx_event_t *ev)
     ngx_http_run_posted_requests(c);
 }
 
-
+/* 请求处理完毕后，后续子请求的处理流程 */
 void
 ngx_http_run_posted_requests(ngx_connection_t *c)
 {

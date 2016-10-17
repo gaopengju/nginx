@@ -227,7 +227,8 @@ typedef struct {
 
     ngx_array_t                       cookies;
 
-    ngx_str_t                         server;
+    ngx_str_t                         server;           /* 请求行URI中对应的host地址
+                                                           或通过Host头部指定的地址 */
     off_t                             content_length_n;
     time_t                            keep_alive_n;
 
@@ -309,7 +310,7 @@ typedef struct {
 #endif
 #endif
 
-    ngx_buf_t                       **busy;
+    ngx_buf_t                       **busy;             /* 报文过大后的补充内存??? */
     ngx_int_t                         nbusy;
 
     ngx_buf_t                       **free;
@@ -362,7 +363,7 @@ struct ngx_http_posted_request_s {
 typedef ngx_int_t (*ngx_http_handler_pt)(ngx_http_request_t *r);
 typedef void (*ngx_http_event_handler_pt)(ngx_http_request_t *r);
 
-/* 对应请求的信息结构 */
+/* 对应每请求的信息结构 */
 struct ngx_http_request_s {
     uint32_t                          signature;         /* "HTTP" */
 
@@ -373,7 +374,7 @@ struct ngx_http_request_s {
     void                            **srv_conf;
     void                            **loc_conf;
 
-    ngx_http_event_handler_pt         read_event_handler;
+    ngx_http_event_handler_pt         read_event_handler;     /* 读写事件句柄 */
     ngx_http_event_handler_pt         write_event_handler;
 
 #if (NGX_HTTP_CACHE)
@@ -389,25 +390,31 @@ struct ngx_http_request_s {
                                                           一般指向ngx_connection_t->buffer */
 
     ngx_http_headers_in_t             headers_in;
-    ngx_http_headers_out_t            headers_out;
+    ngx_http_headers_out_t            headers_out;     /* 请求头/输出头信息
+                                                            其中headers_in->headers链表存储解析请求头
+                                                            时的结果, 而headers_in中的指针变量则指向
+                                                            此链表的对象(从而间接指向请求头所在的缓存
+                                                            减少内存拷贝, 多了的这层结构就是为了组织
+                                                            更多的信息而已)*/
 
-    ngx_http_request_body_t          *request_body;
+    ngx_http_request_body_t          *request_body;    /* 用于upstream时, 用于描述发送到后端服务器
+                                                          的信息; ->post_handler=ngx_http_upstream_init */
 
     time_t                            lingering_time;
     time_t                            start_sec;
     ngx_msec_t                        start_msec;
 
-    ngx_uint_t                        method;
-    ngx_uint_t                        http_version;
+    ngx_uint_t                        method;          /* 请求方法，NGX_HTTP_GET等 */
+    ngx_uint_t                        http_version;    /* 协议版本号, =->http_major * 1000 + r->http_minor */
 
-    ngx_str_t                         request_line;
-    ngx_str_t                         uri;
+    ngx_str_t                         request_line;    /* 完整的请求行 */
+    ngx_str_t                         uri;             /* 请求URI */
     ngx_str_t                         args;
     ngx_str_t                         exten;
     ngx_str_t                         unparsed_uri;
 
-    ngx_str_t                         method_name;
-    ngx_str_t                         http_protocol;
+    ngx_str_t                         method_name;     /* "POST"/"HEAD"等 */
+    ngx_str_t                         http_protocol;   /*  "HTTP 1.0" */
 
     ngx_chain_t                      *out;
     ngx_http_request_t               *main;
@@ -416,11 +423,11 @@ struct ngx_http_request_s {
     ngx_http_post_subrequest_t       *post_subrequest;
     ngx_http_posted_request_t        *posted_requests;
 
-    ngx_int_t                         phase_handler;
+    ngx_int_t                         phase_handler;  /* 当前对应的处理phase索引 */
     ngx_http_handler_pt               content_handler;
     ngx_uint_t                        access_code;
 
-    ngx_http_variable_value_t        *variables;
+    ngx_http_variable_value_t        *variables;      /* 本次请求对应的变量 */
 
 #if (NGX_PCRE)
     ngx_uint_t                        ncaptures;
@@ -434,11 +441,14 @@ struct ngx_http_request_s {
     /* used to learn the Apache compatible response length without a header */
     size_t                            header_size;
 
-    off_t                             request_length;
+    off_t                             request_length;  /* */
 
     ngx_uint_t                        err_status;
 
-    ngx_http_connection_t            *http_connection;     /* http相关的连接信息 */
+    ngx_http_connection_t            *http_connection; /* 对应此http连接的配置服务器信息, 
+                                                          建立连接时被ngx_connection_t->data索引;
+                                                          接收到用户请求后, ngx_connection_t->data
+                                                          用来索引本结构, 原值被此变量索引 */
 #if (NGX_HTTP_V2)
     ngx_http_v2_stream_t             *stream;
 #endif
@@ -453,7 +463,18 @@ struct ngx_http_request_s {
 
     unsigned                          aio:1;
 
-    unsigned                          http_state:4;
+    unsigned                          http_state:4;  /* 当前的处理状态
+                                            NGX_HTTP_INITING_REQUEST_STATE
+                                            NGX_HTTP_READING_REQUEST_STATE
+                                            NGX_HTTP_PROCESS_REQUEST_STATE
+
+                                            NGX_HTTP_CONNECT_UPSTREAM_STATE
+                                            NGX_HTTP_WRITING_UPSTREAM_STATE
+                                            NGX_HTTP_READING_UPSTREAM_STATE
+
+                                            NGX_HTTP_WRITING_REQUEST_STATE
+                                            NGX_HTTP_LINGERING_CLOSE_STATE
+                                            NGX_HTTP_KEEPALIVE_STATE*/
 
     /* URI with "/." and on Win32 with "//" */
     unsigned                          complex_uri:1;
@@ -515,7 +536,7 @@ struct ngx_http_request_s {
     unsigned                          pipeline:1;
     unsigned                          chunked:1;
     unsigned                          header_only:1;
-    unsigned                          keepalive:1;
+    unsigned                          keepalive:1;          /* 是否支持长链接? */
     unsigned                          lingering_close:1;
     unsigned                          discard_body:1;
     unsigned                          reading_body:1;
@@ -523,7 +544,7 @@ struct ngx_http_request_s {
     unsigned                          error_page:1;
     unsigned                          filter_finalize:1;
     unsigned                          post_action:1;
-    unsigned                          request_complete:1;
+    unsigned                          request_complete:1;   /* 请求处理完毕 */
     unsigned                          request_output:1;
     unsigned                          header_sent:1;
     unsigned                          expect_tested:1;
@@ -548,10 +569,11 @@ struct ngx_http_request_s {
 
     /* used to parse HTTP headers */
 
-    ngx_uint_t                        state;
+    ngx_uint_t                        state;         /* 解析http头时的状态机, 
+                                                        内置在函数ngx_http_parse_request_line()中 */
 
-    ngx_uint_t                        header_hash;
-    ngx_uint_t                        lowcase_index;
+    ngx_uint_t                        header_hash;   /* 请求头部某个字段的hash值 */
+    ngx_uint_t                        lowcase_index; /* 头部的值 */
     u_char                            lowcase_header[NGX_HTTP_LC_HEADER_LEN];
 
     u_char                           *header_name_start;
@@ -563,15 +585,14 @@ struct ngx_http_request_s {
      * a memory that can be reused after parsing a request line
      * via ngx_http_ephemeral_t
      */
-
-    u_char                           *uri_start;
+    u_char                           *uri_start;     /* 请求行中'/'所在的位置 */
     u_char                           *uri_end;
     u_char                           *uri_ext;
     u_char                           *args_start;
-    u_char                           *request_start;
-    u_char                           *request_end;
-    u_char                           *method_end;
-    u_char                           *schema_start;
+    u_char                           *request_start; /* 指向GET/PUT/POST等的第一个字节 */
+    u_char                           *request_end;   /* 指请求行的最后一个字节 */
+    u_char                           *method_end;    /* 指向GET/PUT/POST等的最后一个字节 */
+    u_char                           *schema_start;  /* scheme起始位置 */
     u_char                           *schema_end;
     u_char                           *host_start;
     u_char                           *host_end;

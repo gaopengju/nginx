@@ -98,12 +98,16 @@ static uint32_t  usual[] = {
 #endif
 
 
-/* gcc, icc, msvc and others compile these switches as an jump table */
+/* gcc, icc, msvc and others compile these switches as an jump table 
+   函数长，但都以switch-case组织，被gcc等编译后，将变为高效的跳表格式
+
+   NGX_AGAIN  缓存的请求行不完整，待后续继续处理
+   NGX_OK     请求行处理完毕 */
 ngx_int_t
 ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
 {
     u_char  c, ch, *p, *m;
-    enum {
+    enum {                             /* 请求行解析的状态机 */
         sw_start = 0,
         sw_method,
         sw_spaces_before_uri,
@@ -133,7 +137,7 @@ ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
         sw_almost_done
     } state;
 
-    state = r->state;
+    state = r->state;                      /* 继续上次分析的状态机 */
 
     for (p = b->pos; p < b->last; p++) {
         ch = *p;
@@ -806,8 +810,8 @@ ngx_http_parse_request_line(ngx_http_request_t *r, ngx_buf_t *b)
         }
     }
 
-    b->pos = p;
-    r->state = state;
+    b->pos = p;               /* 缓存已解析完毕，但请求行信息不完整，保存 */
+    r->state = state;         /* 解析状态，待下次继续解析 */
 
     return NGX_AGAIN;
 
@@ -829,14 +833,17 @@ done:
     return NGX_OK;
 }
 
-
+/* 以行为单位解析HTTP的头部信息 
+   NGX_OK                     单个头部行解析结束
+   NGX_AGAIN                  头部缓存不足，继续接收数据
+   NGX_HTTP_PARSE_HEADER_DONE 整个头部解析结束 */
 ngx_int_t
 ngx_http_parse_header_line(ngx_http_request_t *r, ngx_buf_t *b,
     ngx_uint_t allow_underscores)
 {
     u_char      c, ch, *p;
     ngx_uint_t  hash, i;
-    enum {
+    enum {                               /* 内置的解析头部字段的状态机 */
         sw_start = 0,
         sw_name,
         sw_space_before_value,
@@ -847,8 +854,7 @@ ngx_http_parse_header_line(ngx_http_request_t *r, ngx_buf_t *b,
         sw_header_almost_done
     } state;
 
-    /* the last '\0' is not needed because string is zero terminated */
-
+    /* 加速用的跳表，the last '\0' is not needed because string is zero terminated */
     static u_char  lowcase[] =
         "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
         "\0\0\0\0\0\0\0\0\0\0\0\0\0-\0\0" "0123456789\0\0\0\0\0\0"
@@ -859,7 +865,7 @@ ngx_http_parse_header_line(ngx_http_request_t *r, ngx_buf_t *b,
         "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
         "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
 
-    state = r->state;
+    state = r->state;                    /* 继续解析，恢复状态 */
     hash = r->header_hash;
     i = r->lowcase_index;
 
