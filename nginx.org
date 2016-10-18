@@ -162,6 +162,55 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
                     -ngx_event_process_posted()
     #+END_EXAMPLE
 
+* 变量
+变量指nginx配置中使用的可变符号，以$开头；nginx推出变量机制，是为方便用户根据
+实时环境定制复杂的控制逻辑。
+  - 仅支持字符串类型的变量 
+  - 赋值为自动赋值、惰性赋值
+  - 内部变量为预定义的
+  - 也支持外部变量(自定义变量)
+
+  #+BEGIN_EXAMPLE
+  -ngx_init_cycle()
+    -ngx_conf_parse()
+      -ngx_http_block()                  解析http{}入口
+        -ngx_http_module_t->preconfiguration() 
+                                         在http{}解析前调用, 将各个模块儿支持
+                                           的变量加入ngx_http_core_main_conf_t
+                                           ->variables_keys, 此处为内
+                                           部变量，如ngx_http_core_variables[]
+        -ngx_conf_parse()                递归调用解析http内容，配置文件中的外
+          -ngx_http_rewrite_set()          部变量，也加入->variables_keys，如
+            -ngx_http_add_variable()       ngx_http_rewrite_module模块儿的"set"
+            -ngx_http_get_variable_index() 指令，同时也加入->variables表
+        -...
+        -ngx_http_variables_init_vars()  合法性检测
+  ----------------------------------------------------
+  -ngx_http_init_connection()            ~/src/http/ngx_http_request.c
+    -ngx_http_wait_request_handler()     接收请求
+      -ngx_http_create_request()         创建请求信息结构ngx_http_request_t
+        -ngx_pcalloc()                   分配内存ngx_http_request_t->variables，
+                                           代表可能的变量值，对应变量名
+                                           ngx_http_core_main_conf_t->variables
+                                           因此它们的索引一致
+      -ngx_http_process_request_line()
+        -ngx_http_process_request_headers()
+          -ngx_http_process_request()
+            -ngx_http_handler()
+              -ngx_http_core_run_phases()
+                -ngx_http_rewrite_handler()    重写阶段入口函数，设置需要的变量值
+            -ngx_http_run_posted_requests()
+  #+END_EXAMPLE
+
+  #+BEGIN_EXAMPLE
+  对应指令"set $arg_a 30;"的脚本流程
+  -ngx_http_rewrite_set()                "set"指令处理入口，~/src/http/modules/ngx_http_rewrite_module.c
+    -ngx_http_rewrite_value()            构建脚本引擎
+  
+  脚本执行流程, NGX_HTTP_REWRITE_PHASE阶段
+  -ngx_http_rewrite_handler()            脚本引擎处理句柄入口，ngx_http_rewrite_module.c
+  #+END_EXAMPLE
+
 * HTTP请求处理
 以下函数列表顺序，代表了HTTP请求的处理顺序
   - 处理入口             :: =ngx_http_init_connection():~/src/http/ngx_http_request.c=
@@ -170,7 +219,7 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
   - 处理请求头           :: =ngx_http_process_request_headers()=
   - HTTP请求处理入口     :: =ngx_http_process_request()=
   - phase handler入口    :: =ngx_http_core_run_phases()=
-  - 当前处理完毕后       :: =ngx_http_run_posted_requests()=
+  - 当前处理完毕后，触发子请求   :: =ngx_http_run_posted_requests()=
 
 
 

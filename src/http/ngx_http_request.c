@@ -76,7 +76,9 @@ static char *ngx_http_client_errors[] = {
     "client sent invalid method in HTTP/0.9 request"
 };
 
-/* HTTP头的处理回调函数，初始化ngx_http_request_t->headers_in
+/* 所有可被nginx识别并处理的HTTP头部都在此数组中
+ 
+   HTTP头的处理回调函数，初始化ngx_http_request_t->headers_in
    结构的指针变量; 指向的地址为ngx_http_request_t->headers_in->headers链表对象 */
 ngx_http_header_t  ngx_http_headers_in[] = {
     { ngx_string("Host"), offsetof(ngx_http_headers_in_t, host),
@@ -570,6 +572,8 @@ ngx_http_create_request(ngx_connection_t *c)
 
     cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
 
+    /* 分配请求可能用到的变量，数量与->variables[]相同，因此变量名的索引
+       和此处分配的变量值数组索引一一对应 */
     r->variables = ngx_pcalloc(r->pool, cmcf->variables.nelts
                                         * sizeof(ngx_http_variable_value_t));
     if (r->variables == NULL) {

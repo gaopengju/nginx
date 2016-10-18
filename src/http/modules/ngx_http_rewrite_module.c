@@ -11,8 +11,11 @@
 
 
 typedef struct {
-    ngx_array_t  *codes;        /* uintptr_t */
-
+    ngx_array_t  *codes;        /* 对应set指令生成的脚本引擎，可能的结构体
+                                      ngx_http_script_value_code_t           简单的set指令脚本
+                                      ngx_http_script_complex_value_code_t   复杂的set指令(值中带有$)脚本
+                                      ngx_http_script_var_code_t             启动脚本的句柄
+                                      ngx_http_script_var_handler_code_t */
     ngx_uint_t    stack_size;
 
     ngx_flag_t    log;
@@ -132,7 +135,7 @@ ngx_module_t  ngx_http_rewrite_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* 重写阶段的处理句柄，NGX_HTTP_REWRITE_PHASE和NGX_HTTP_SERVER_REWRITE_PHASE */
 static ngx_int_t
 ngx_http_rewrite_handler(ngx_http_request_t *r)
 {
@@ -158,6 +161,7 @@ ngx_http_rewrite_handler(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
 
+    /* 分配脚本引擎执行栈，并初始化 */
     e = ngx_pcalloc(r->pool, sizeof(ngx_http_script_engine_t));
     if (e == NULL) {
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
@@ -174,7 +178,8 @@ ngx_http_rewrite_handler(ngx_http_request_t *r)
     e->quote = 1;
     e->log = rlcf->log;
     e->status = NGX_DECLINED;
-
+    
+    /* 执行脚本引擎 */
     while (*(uintptr_t *) e->ip) {
         code = *(ngx_http_script_code_pt *) e->ip;
         code(e);
@@ -191,7 +196,8 @@ ngx_http_rewrite_handler(ngx_http_request_t *r)
     return r->err_status;
 }
 
-
+/* 晚绑定变量处理句柄，如果此变量尚未被初始化，则调用此函数；
+   晚绑定变量的实际处理句柄为ngx_http_get_indexed_variable() */
 static ngx_int_t
 ngx_http_rewrite_var(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     uintptr_t data)
@@ -275,7 +281,7 @@ ngx_http_rewrite_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child)
     return NGX_CONF_OK;
 }
 
-
+/* 注册重写阶段的处理句柄 */
 static ngx_int_t
 ngx_http_rewrite_init(ngx_conf_t *cf)
 {
@@ -296,7 +302,7 @@ ngx_http_rewrite_init(ngx_conf_t *cf)
         return NGX_ERROR;
     }
 
-    *h = ngx_http_rewrite_handler;
+    *h = ngx_http_rewrite_handler;      /* 处理句柄 */
 
     return NGX_OK;
 }
@@ -894,7 +900,7 @@ ngx_http_rewrite_variable(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     return NGX_CONF_OK;
 }
 
-
+/* 对应set配置指令 */
 static char *
 ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -917,16 +923,19 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     value[1].len--;
     value[1].data++;
 
+    /* 记录到ngx_http_core_main_conf_t->variables_keys */
     v = ngx_http_add_variable(cf, &value[1], NGX_HTTP_VAR_CHANGEABLE);
     if (v == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    /* 同时加入ngx_http_core_main_conf_t->variables数组 */
     index = ngx_http_get_variable_index(cf, &value[1]);
     if (index == NGX_ERROR) {
         return NGX_CONF_ERROR;
     }
 
+    /* 对于需要根据具体请求设置的变量，设置晚绑定处理句柄 */
     if (v->get_handler == NULL
         && ngx_strncasecmp(value[1].data, (u_char *) "http_", 5) != 0
         && ngx_strncasecmp(value[1].data, (u_char *) "sent_http_", 10) != 0
@@ -936,14 +945,16 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
            != 0
         && ngx_strncasecmp(value[1].data, (u_char *) "arg_", 4) != 0)
     {
-        v->get_handler = ngx_http_rewrite_var;
+        v->get_handler = ngx_http_rewrite_var;    /* 未初始化变量处理句柄 */
         v->data = index;
     }
 
+    /* 构建脚本引擎，以便在处理请求期间更新变量值 */
     if (ngx_http_rewrite_value(cf, lcf, &value[2]) != NGX_CONF_OK) {
         return NGX_CONF_ERROR;
     }
 
+    /* 初始化执行脚本引擎的句柄 */
     if (v->set_handler) {
         vhcode = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                    sizeof(ngx_http_script_var_handler_code_t));
@@ -970,7 +981,7 @@ ngx_http_rewrite_set(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
-
+/* 构建脚本引擎，对应的指令类似于"set $arg 30;" */
 static char *
 ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     ngx_str_t *value)
@@ -980,9 +991,11 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
     ngx_http_script_value_code_t          *val;
     ngx_http_script_complex_value_code_t  *complex;
 
+    /* 计算变量值中存在 $ 字符的个数*/
     n = ngx_http_script_variables_count(value);
-
+    /* 变量值为简单值，不存在$字符 */
     if (n == 0) {
+        /* 从ngx_http_rewrite_loc_conf_t->codes申请存储空间 */
         val = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                          sizeof(ngx_http_script_value_code_t));
         if (val == NULL) {
@@ -995,14 +1008,16 @@ ngx_http_rewrite_value(ngx_conf_t *cf, ngx_http_rewrite_loc_conf_t *lcf,
             n = 0;
         }
 
-        val->code = ngx_http_script_value_code;
+        /* 初始化 */
+        val->code = ngx_http_script_value_code;    /* 回调指针 */
         val->value = (uintptr_t) n;
         val->text_len = (uintptr_t) value->len;
         val->text_data = (uintptr_t) value->data;
 
         return NGX_CONF_OK;
     }
-
+    
+    /* 变量值为复杂值，存在$字符 */
     complex = ngx_http_script_start_code(cf->pool, &lcf->codes,
                                  sizeof(ngx_http_script_complex_value_code_t));
     if (complex == NULL) {

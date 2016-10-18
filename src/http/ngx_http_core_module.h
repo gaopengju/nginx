@@ -179,21 +179,17 @@ typedef struct {
     ngx_http_phase_engine_t    phase_engine;
     
     /*各模块儿对http特定头的处理回调
-                                    如, http模块的
-                                        ngx_http_headers_in[]
-                                    upstream模块儿的
-                                        ngx_http_upstream_headers_in[]*/
+         如, http模块的ngx_http_headers_in[]
+             upstream模块儿的ngx_http_upstream_headers_in[]*/
     ngx_hash_t                 headers_in_hash;
 
-    /* 由->variables_keys构造的hash数组
-                                    ngx_http_variable_t->index =
-                                    对应其在(variables[])中的数组索引*/
+    /* 由->variables_keys中没有设置NGX_HTTP_VAR_NOHASH标识的部分构造 */
     ngx_hash_t                 variables_hash;
 
-    /* 包括: 解析配置文件时，被使用到的变量; 
-                                    及内置在代码中的变量; 
-                                    类型ngx_http_variable_t */
-    ngx_array_t                variables;       /* ngx_http_variable_t */
+    /* 配置文件中引用的变量，数组，元素类型ngx_http_variable_t
+           也包括通过set指令'定义+引用'的
+           也包括代码内置的 */
+    ngx_array_t                variables;
     ngx_uint_t                 ncaptures;
 
     ngx_uint_t                 server_names_hash_max_size;
@@ -202,10 +198,9 @@ typedef struct {
     ngx_uint_t                 variables_hash_max_size;
     ngx_uint_t                 variables_hash_bucket_size;
 
-    /* 可配置变量的hash数组, 包括
-                                    ngx_http_core_variables[], 其他模块
-                                    儿支持的变量在初始化时也将注册进来;
-                                    解析完毕后, 此内存会被释放, = NULL*/
+    /* 支持的可配置变量的hash数组
+           通过ngx_module_t->ctx->preconfiguration()注册
+           解析完毕后, 此内存会被释放, = NULL */
     ngx_hash_keys_arrays_t    *variables_keys;
 
     ngx_array_t               *ports;           /* listen监听端口数组，ngx_http_conf_port_t */

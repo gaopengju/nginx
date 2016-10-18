@@ -13,12 +13,12 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-
+/* 脚本引擎执行时所需的堆栈, 后进先出, 用于保存中间的变量等信息 */
 typedef struct {
-    u_char                     *ip;
+    u_char                     *ip;           /* 当前脚本的回调指针 */
     u_char                     *pos;
-    ngx_http_variable_value_t  *sp;
-
+    ngx_http_variable_value_t  *sp;           /* 栈顶指针, 临时保存变量值, 用于在
+                                                 脚本之间传递数据 */
     ngx_str_t                   buf;
     ngx_str_t                   line;
 
@@ -32,7 +32,7 @@ typedef struct {
     unsigned                    log:1;
 
     ngx_int_t                   status;
-    ngx_http_request_t         *request;
+    ngx_http_request_t         *request;      /* 对应的客户端请求 */
 } ngx_http_script_engine_t;
 
 
@@ -91,10 +91,11 @@ typedef struct {
     uintptr_t                   len;
 } ngx_http_script_copy_code_t;
 
-
+/* 简单脚本引擎的结构, 对应"set $var value;"的配置语法对应请求变量赋值的过程 */
 typedef struct {
-    ngx_http_script_code_pt     code;
-    uintptr_t                   index;
+    ngx_http_script_code_pt     code;  /* 把压栈的变量值出栈的函数, 默认为
+                                            ngx_http_script_set_var_code()*/
+    uintptr_t                   index; /* 变量在ngx_http_core_main_conf_t->variables[]的索引 */
 } ngx_http_script_var_code_t;
 
 
@@ -194,11 +195,11 @@ typedef struct {
     ngx_array_t                *lengths;
 } ngx_http_script_complex_value_code_t;
 
-
+/* 简单脚本引擎的结构, 对应"set $var value;"的配置语法对应获取(变量)值的过程 */
 typedef struct {
-    ngx_http_script_code_pt     code;
-    uintptr_t                   value;
-    uintptr_t                   text_len;
+    ngx_http_script_code_pt     code;        /* 变量值压栈函数，ngx_http_script_value_code() */
+    uintptr_t                   value;       /* 变量值的atoi()结果，具体的数值或0-对应atoi()失败 */
+    uintptr_t                   text_len;    /* 原变量值的字符串形式 */
     uintptr_t                   text_data;
 } ngx_http_script_value_code_t;
 

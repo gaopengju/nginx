@@ -755,13 +755,14 @@ static ngx_command_t  ngx_http_core_commands[] = {
 static ngx_http_module_t  ngx_http_core_module_ctx = {
     ngx_http_core_preconfiguration,   /* 在http{}配置块解析前被调用, 功能包括:
                                          1)模块儿支持的内部变量加入到
-                                            ngx_http_core_main_conf_t->variables_keys 
+                                            ngx_http_core_main_conf_t->variables_keys
+                                            如ngx_http_core_variables[]
                                       */
     ngx_http_core_postconfiguration,  /* 在http{}配置块解析后被调用, 功能包括:
                                          1)填充默认值
                                          2)挂载处理指针到
                                             ngx_http_core_main_conf_t->phases[]
-                                      */
+                                       */
 
     ngx_http_core_create_main_conf,        /* create main configuration */
     ngx_http_core_init_main_conf,          /* init main configuration */
@@ -1367,7 +1368,7 @@ ngx_http_core_try_files_phase(ngx_http_request_t *r,
     /* not reached */
 }
 
-
+/* NGX_HTTP_CONTENT_PHASE阶段的->checker()函数, 用户请求的内容处理句柄入口*/
 ngx_int_t
 ngx_http_core_content_phase(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph)
@@ -1376,6 +1377,10 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     ngx_int_t  rc;
     ngx_str_t  path;
 
+    /* ngx_http_request_t->content_handler优先级最高, 调用后不再调用其他注
+       册的句柄, 主要提供给upstream等模块儿使用
+
+       对于ngx_http_proxy_module--upstream模块儿, 为ngx_http_proxy_handler() */
     if (r->content_handler) {
         r->write_event_handler = ngx_http_request_empty_handler;
         ngx_http_finalize_request(r, r->content_handler(r));

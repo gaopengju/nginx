@@ -24,16 +24,16 @@ typedef struct {
     ngx_str_t   value;
 } ngx_keyval_t;
 
-
+/* 变量值的描述结构；变量名的结构定义在~/src/http/ngx_http_variables.h */
 typedef struct {
-    unsigned    len:28;
+    unsigned    len:28;           /* 长度 */
 
-    unsigned    valid:1;
-    unsigned    no_cacheable:1;
-    unsigned    not_found:1;
-    unsigned    escape:1;
+    unsigned    valid:1;          /* 是否有效？ */
+    unsigned    no_cacheable:1;   /* 是否需要缓存？*/
+    unsigned    not_found:1;      /* 是否已找到变量？*/
+    unsigned    escape:1;         /* */
 
-    u_char     *data;
+    u_char     *data;             /* 变量的值 */
 } ngx_variable_value_t;
 
 

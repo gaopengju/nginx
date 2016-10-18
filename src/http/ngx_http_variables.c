@@ -152,8 +152,9 @@ static ngx_int_t ngx_http_variable_time_local(ngx_http_request_t *r,
  * variables may be handled by generic
  * ngx_http_variable_unknown_header_in(), but for performance reasons
  * they are handled using dedicated entries
+ *
+ * HTTP支持的内部变量
  */
-
 static ngx_http_variable_t  ngx_http_core_variables[] = {
 
     { ngx_string("http_host"), NULL, ngx_http_variable_header,
@@ -365,7 +366,7 @@ ngx_http_variable_value_t  ngx_http_variable_null_value =
 ngx_http_variable_value_t  ngx_http_variable_true_value =
     ngx_http_variable("1");
 
-
+/* 记录变量到ngx_http_core_main_conf_t->variables_keys */
 ngx_http_variable_t *
 ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
 {
@@ -382,7 +383,7 @@ ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
     }
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
-
+    /* 查找是否存在 */
     key = cmcf->variables_keys->keys.elts;
     for (i = 0; i < cmcf->variables_keys->keys.nelts; i++) {
         if (name->len != key[i].key.len
@@ -401,7 +402,7 @@ ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
 
         return v;
     }
-
+    /* 未找到，则加入此临时hash表 */
     v = ngx_palloc(cf->pool, sizeof(ngx_http_variable_t));
     if (v == NULL) {
         return NULL;
@@ -436,7 +437,7 @@ ngx_http_add_variable(ngx_conf_t *cf, ngx_str_t *name, ngx_uint_t flags)
     return v;
 }
 
-
+/* 查找对应的变量数组索引，如果存在则返回索引；不存在，则加入数组 */
 ngx_int_t
 ngx_http_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
 {
@@ -453,7 +454,7 @@ ngx_http_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
     v = cmcf->variables.elts;
-
+    /* 查看变量是否存在 */
     if (v == NULL) {
         if (ngx_array_init(&cmcf->variables, cf->pool, 4,
                            sizeof(ngx_http_variable_t))
@@ -473,7 +474,7 @@ ngx_http_get_variable_index(ngx_conf_t *cf, ngx_str_t *name)
             return i;
         }
     }
-
+    /* 不存在则加入数组，并返回新插入的索引 */
     v = ngx_array_push(&cmcf->variables);
     if (v == NULL) {
         return NGX_ERROR;
@@ -2474,7 +2475,7 @@ ngx_http_regex_exec(ngx_http_request_t *r, ngx_http_regex_t *re, ngx_str_t *s)
 
 #endif
 
-
+/* 记录支持的HTTP内部变量 */
 ngx_int_t
 ngx_http_variables_add_core_vars(ngx_conf_t *cf)
 {
@@ -2484,6 +2485,7 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
 
     cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
 
+    /* 分配内存 */
     cmcf->variables_keys = ngx_pcalloc(cf->temp_pool,
                                        sizeof(ngx_hash_keys_arrays_t));
     if (cmcf->variables_keys == NULL) {
@@ -2499,6 +2501,7 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
         return NGX_ERROR;
     }
 
+    /* 加入支持的HTTP内部变量 */
     for (cv = ngx_http_core_variables; cv->name.len; cv++) {
         v = ngx_palloc(cf->pool, sizeof(ngx_http_variable_t));
         if (v == NULL) {
@@ -2525,7 +2528,7 @@ ngx_http_variables_add_core_vars(ngx_conf_t *cf)
     return NGX_OK;
 }
 
-
+/* http{}解析完毕后，nginx变量初始化 */
 ngx_int_t
 ngx_http_variables_init_vars(ngx_conf_t *cf)
 {
@@ -2541,24 +2544,23 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
 
     v = cmcf->variables.elts;
     key = cmcf->variables_keys->keys.elts;
-
+    /* 遍历配置文件中引用的变量，验证合法性 */
     for (i = 0; i < cmcf->variables.nelts; i++) {
-
+        /* 遍历各模块儿注册的变量，看是否存在其中 */
         for (n = 0; n < cmcf->variables_keys->keys.nelts; n++) {
 
             av = key[n].value;
-
             if (v[i].name.len == key[n].key.len
                 && ngx_strncmp(v[i].name.data, key[n].key.data, v[i].name.len)
                    == 0)
             {
-                v[i].get_handler = av->get_handler;
+                v[i].get_handler = av->get_handler; /* 在其中，则设置获取句柄 */
                 v[i].data = av->data;
 
-                av->flags |= NGX_HTTP_VAR_INDEXED;
+                av->flags |= NGX_HTTP_VAR_INDEXED;  /* 设置标识，被配置文件引用 */
                 v[i].flags = av->flags;
 
-                av->index = i;
+                av->index = i;                      /* 设置索引 */
 
                 if (av->get_handler == NULL) {
                     break;
@@ -2568,6 +2570,16 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
             }
         }
 
+        /* 另外，有一些变量虽然不在->variables_keys中，但也是合法的；它们以
+               http_
+               sent_http_
+               upstream_http_
+               cookie_
+               upstream_cookie_
+               arg_
+           开头，这些变量是根据请求自动生成的，是动态的；对于它们，设置估定
+           的存取函数句柄
+         */
         if (v[i].name.len >= 5
             && ngx_strncmp(v[i].name.data, "http_", 5) == 0)
         {
@@ -2635,6 +2647,7 @@ ngx_http_variables_init_vars(ngx_conf_t *cf)
     }
 
 
+    /* 存储需要HASH的变量，其他的则删除 */
     for (n = 0; n < cmcf->variables_keys->keys.nelts; n++) {
         av = key[n].value;
 

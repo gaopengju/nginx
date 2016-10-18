@@ -427,7 +427,8 @@ struct ngx_http_request_s {
     ngx_http_handler_pt               content_handler;
     ngx_uint_t                        access_code;
 
-    ngx_http_variable_value_t        *variables;      /* 本次请求对应的变量 */
+    ngx_http_variable_value_t        *variables;      /* 本次请求对应的变量值数组，
+                                                         索引顺序对应ngx_http_core_main_conf_t->variables[] */
 
 #if (NGX_PCRE)
     ngx_uint_t                        ncaptures;

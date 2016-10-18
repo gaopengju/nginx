@@ -26,19 +26,27 @@ typedef ngx_int_t (*ngx_http_get_variable_pt) (ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
 
 
-#define NGX_HTTP_VAR_CHANGEABLE   1
-#define NGX_HTTP_VAR_NOCACHEABLE  2
-#define NGX_HTTP_VAR_INDEXED      4
-#define NGX_HTTP_VAR_NOHASH       8
+#define NGX_HTTP_VAR_CHANGEABLE   1   /* 变量是否可重复添加，后续值覆盖前值 */
+#define NGX_HTTP_VAR_NOCACHEABLE  2   /* 变量不可缓存，此时每次获取变量值都重新计算，如uri */
+#define NGX_HTTP_VAR_INDEXED      4   /* 变量被配置文件引用 */
+#define NGX_HTTP_VAR_NOHASH       8   /**/
 
-
+/* 变量名的描述结果；变量值结构定义在~/src/core/ngx_string.h；
+   变量名和变量值分开的好处是节省内存，如多个变量，可能只需要一个变量名，多个变量值 */
 struct ngx_http_variable_s {
-    ngx_str_t                     name;   /* must be first to build the hash */
-    ngx_http_set_variable_pt      set_handler;
-    ngx_http_get_variable_pt      get_handler;
-    uintptr_t                     data;
-    ngx_uint_t                    flags;
-    ngx_uint_t                    index;
+    ngx_str_t                     name;   /* 变量名字符串 */
+    ngx_http_set_variable_pt      set_handler;   /* 组成脚本引擎的一部分, 在处理请求过程中
+                                                    动态更新对应的变量值; 带有此接口的
+                                                    变量都是_CHANGEABLE + _NOCACHEABLE */
+    ngx_http_get_variable_pt      get_handler;   /* 获取变量值的回调函数, 通过其屏蔽简单的
+                                                    "直接的情况"和复杂的"间接的情况"之
+                                                     间的差异 */
+    uintptr_t                     data;   /* 此值一般作为->set_handler/get_handler
+                                             函数的第三个参数, 在"直接的情况"下
+                                             用于指定变量在请求头中的偏移, 以便
+                                             回调函数操作(修改/读取)存放变量值的地方 */
+    ngx_uint_t                    flags;  /* 变量标识，NGX_HTTP_VAR_* */
+    ngx_uint_t                    index;  /* 被配置文件引用，对应ngx_http_core_main_conf_t->variables[]索引 */
 };
 
 
