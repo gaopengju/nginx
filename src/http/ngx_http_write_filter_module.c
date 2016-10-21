@@ -321,6 +321,8 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
 static ngx_int_t
 ngx_http_write_filter_init(ngx_conf_t *cf)
 {
+    /* body过滤链的尾指针；虽然第一个被注册，但整体注册完毕后，执行阶段
+       将最后一个被执行 */
     ngx_http_top_body_filter = ngx_http_write_filter;
 
     return NGX_OK;

@@ -606,6 +606,8 @@ ngx_http_header_filter(ngx_http_request_t *r)
 static ngx_int_t
 ngx_http_header_filter_init(ngx_conf_t *cf)
 {
+    /* header过滤链的尾指针；虽然第一个被注册，但整体注册完毕后，执行阶段
+       将最后一个被执行 */
     ngx_http_top_header_filter = ngx_http_header_filter;
 
     return NGX_OK;

@@ -221,5 +221,44 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
   - phase handler入口    :: =ngx_http_core_run_phases()=
   - 当前处理完毕后，触发子请求   :: =ngx_http_run_posted_requests()=
 
+* filter模块儿
+对于http请求处理handler产生的响应内容，在发送给客户端前，需过滤处理；这
+些过滤模块儿对于增强功能、提升性能非常必要。
 
+由于http数据包括头部和内容两部分，因此过滤模块儿对应的处理函数也一般有
+两个，分别对应header和body；这些函数组成两条过滤链，分别由指针变量
+=ngx_http_top_header_filter= 和 =ngx_http_top_body_filter= 索引。
+
+** 过滤链的形成机理
+  #+BEGIN_EXAMPLE
+  定义链表首元素指针                        ~/src/http/ngx_http.c
+  ngx_http_output_header_filter_pt  ngx_http_top_header_filter;
+  ngx_http_output_body_filter_pt    ngx_http_top_body_filter;
+  ngx_http_request_body_filter_pt   ngx_http_top_request_body_filter;
+  #+END_EXAMPLE
+
+  #+BEGIN_EXAMPLE
+  注册链表的起始模块儿，注册完成后链表的尾模块儿
+  ngx_http_write_filter_module
+  ngx_http_header_filter_module
+  #+END_EXAMPLE
+
+  #+BEGIN_EXAMPLE
+  各filter模块儿定义局部指针
+  static ngx_http_output_header_filter_pt  ngx_http_next_header_filter;
+  static ngx_http_output_body_filter_pt    ngx_http_next_body_filter;
+ 
+  利用以下串联关系，组成单链表；先注册的最终将靠近链表尾端，后执行
+  ngx_http_next_header_filter = ngx_http_top_header_filter;
+  ngx_http_top_header_filter = xxx_filter;
+  #+END_EXAMPLE
+
+** 被调用流程
+  #+BEGIN_EXAMPLE
+  发送头部、内容一般在内容处理模块儿被调用
+  -ngx_http_send_header()
+    -ngx_http_top_header_filter()        首部过滤链入口
+  -ngx_http_output_filter()
+    -ngx_http_top_body_filter()          尾部过滤链入口
+  #+END_EXAMPLE
 

@@ -68,7 +68,14 @@ static ngx_int_t ngx_http_add_addrs6(ngx_conf_t *cf, ngx_http_port_t *hport,
 
 ngx_uint_t   ngx_http_max_module;
 
+/* 做为构成输出报文过滤链的首部指针，全局变量；
 
+   具体的处理函数在每个filter模块儿内部定义，利用相应.c文件的局部变量
+       static ngx_http_output_header_filter_pt  ngx_http_next_header_filter;
+       static ngx_http_output_body_filter_pt    ngx_http_next_body_filter;
+   巧妙的串联起来，形成链表；
+
+   各filter模块儿利用ngx_module_t->ctx->postconfiguration()函数注册处理句柄 */
 ngx_http_output_header_filter_pt  ngx_http_top_header_filter;
 ngx_http_output_body_filter_pt    ngx_http_top_body_filter;
 ngx_http_request_body_filter_pt   ngx_http_top_request_body_filter;

@@ -45,8 +45,8 @@
     &ngx_http_upstream_least_conn_module,
     &ngx_http_upstream_keepalive_module,
     &ngx_http_upstream_zone_module,
-    &ngx_http_write_filter_module,
-    &ngx_http_header_filter_module,
+    &ngx_http_write_filter_module,          body过滤链的尾端模块儿
+    &ngx_http_header_filter_module,         header过滤链的尾端模块儿
     &ngx_http_chunked_filter_module,
     &ngx_http_range_header_filter_module,
     &ngx_http_gzip_filter_module,
