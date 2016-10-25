@@ -247,7 +247,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
      * init http{} main_conf's, merge the server{}s' srv_conf's
      * and its location{}s' loc_conf's
      *
-     * 合并配置信息
+     * 通过由上自下的继承，合并配置信息到底层
      */
     cmcf = ctx->main_conf[ngx_http_core_module.ctx_index];
     cscfp = cmcf->servers.elts;
@@ -260,8 +260,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         module = cf->cycle->modules[m]->ctx;
         mi = cf->cycle->modules[m]->ctx_index;
 
-        /* init http{} main_conf's */
-
+        /* 外层环境http{}初始化，init http{} main_conf's */
         if (module->init_main_conf) {
             rv = module->init_main_conf(cf, ctx->main_conf[mi]);
             if (rv != NGX_CONF_OK) {
@@ -269,6 +268,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             }
         }
 
+        /* 利用http{}信息初始化server{}未配置的字段 */
         rv = ngx_http_merge_servers(cf, cmcf, module, mi);
         if (rv != NGX_CONF_OK) {
             goto failed;
@@ -565,7 +565,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
     return NGX_OK;
 }
 
-
+/* 合并http{}上下文配置信息到server{}上下文环境 */
 static char *
 ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     ngx_http_module_t *module, ngx_uint_t ctx_index)
@@ -583,10 +583,8 @@ ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
 
     for (s = 0; s < cmcf->servers.nelts; s++) {
 
-        /* merge the server{}s' srv_conf's */
-
+        /* 归并到server{}的srv_conf配置信息结构 */
         ctx->srv_conf = cscfp[s]->ctx->srv_conf;
-
         if (module->merge_srv_conf) {
             rv = module->merge_srv_conf(cf, saved.srv_conf[ctx_index],
                                         cscfp[s]->ctx->srv_conf[ctx_index]);
@@ -596,9 +594,7 @@ ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
         }
 
         if (module->merge_loc_conf) {
-
-            /* merge the server{}'s loc_conf */
-
+            /* 归并到server{}的loc_conf配置信息结构 */
             ctx->loc_conf = cscfp[s]->ctx->loc_conf;
 
             rv = module->merge_loc_conf(cf, saved.loc_conf[ctx_index],
@@ -607,10 +603,9 @@ ngx_http_merge_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
                 goto failed;
             }
 
-            /* merge the locations{}' loc_conf's */
-
+            /* 归并到locations{}的loc_conf配置信息结构；它是一个递归调用，
+               利用上层的location配置初始化下层的location配置 */
             clcf = cscfp[s]->ctx->loc_conf[ngx_http_core_module.ctx_index];
-
             rv = ngx_http_merge_locations(cf, clcf->locations,
                                           cscfp[s]->ctx->loc_conf,
                                           module, ctx_index);
@@ -627,7 +622,7 @@ failed:
     return rv;
 }
 
-
+/* 归并location{}环境信息的入口函数 */
 static char *
 ngx_http_merge_locations(ngx_conf_t *cf, ngx_queue_t *locations,
     void **loc_conf, ngx_http_module_t *module, ngx_uint_t ctx_index)
@@ -659,7 +654,7 @@ ngx_http_merge_locations(ngx_conf_t *cf, ngx_queue_t *locations,
         if (rv != NGX_CONF_OK) {
             return rv;
         }
-
+        /* 递归，利用高层的location初始化低层的location配置信息 */
         rv = ngx_http_merge_locations(cf, clcf->locations, clcf->loc_conf,
                                       module, ctx_index);
         if (rv != NGX_CONF_OK) {

@@ -149,6 +149,7 @@ nginx的slab管理分两个层级：page页，page页内的slab块儿；其中sl
   - http{}入口函数     :: =ngx_http_block():~/src/http/ngx_http.c=
   - server{}入口函数   :: =ngx_http_core_server():~/src/http/ngx_http_core_module.c=
   - location{}入口函数 :: =ngx_http_core_location():~/src/http/ngx_http_core_module.c=
+  - 配置合并处理入口   :: =ngx_http_merge_servers():~/src/http/ngx_http.c=
 
 #+CAPTION: 四级指针视图
 [[file:ngx_http_module-http{}.png]]
