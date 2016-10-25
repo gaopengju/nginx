@@ -106,7 +106,8 @@ typedef unsigned long               ngx_atomic_uint_t;
 typedef volatile ngx_atomic_uint_t  ngx_atomic_t;
 
 
-#define ngx_atomic_cmp_set(lock, old, set)                                    \
+
+#define ngx_atomic_cmp_set(lock, old, set)          \
     __sync_bool_compare_and_swap(lock, old, set)
 
 #define ngx_atomic_fetch_add(value, add)                                      \

@@ -25,13 +25,17 @@
 typedef struct ngx_shm_zone_s  ngx_shm_zone_t;
 
 typedef ngx_int_t (*ngx_shm_zone_init_pt) (ngx_shm_zone_t *zone, void *data);
-
+/* 共享内存区域的描述结构 */
 struct ngx_shm_zone_s {
-    void                     *data;
-    ngx_shm_t                 shm;
-    ngx_shm_zone_init_pt      init;
-    void                     *tag;
-    ngx_uint_t                noreuse;  /* unsigned  noreuse:1; */
+    void                     *data;     /* 对应的模块儿信息，如ngx_http_limit_req_ctx_t */
+    ngx_shm_t                 shm;      /* 详细描述信息 */
+    ngx_shm_zone_init_pt      init;     /* 初始回调函数，如ngx_http_limit_req_init_zone() */
+    void                     *tag;      /* 标签，一般为模块儿地址信息，区分共享内存的用途；
+                                            防止不同模块儿创建同名称的共享内存，造成逻辑
+                                            混乱 */
+    ngx_uint_t                noreuse;  /* unsigned  noreuse:1; 是否可重用? 可重用的情况
+                                           下，在reload处理时，没有变化的共享内存不必再重
+                                           新分配，仅仅重新初始化就ok */
 };
 
 
@@ -67,7 +71,7 @@ struct ngx_cycle_s {
     ngx_array_t               paths;
     ngx_array_t               config_dump;
     ngx_list_t                open_files;
-    ngx_list_t                shared_memory;
+    ngx_list_t                shared_memory;  /* 共享内存链表 */
 
     ngx_uint_t                connection_n;   /* 配置events{}中参数worker_connections
                                                  的值，默认512; =ngx_event_conf_t

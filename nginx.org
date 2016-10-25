@@ -24,6 +24,104 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 
 启动nginx时，可通过环境变量NGINX继承已有的socket插口
 
+* 进程间通信
+一般情况下，nginx以多进程模型运作，这些进程间通信有多种方式，如共享内存、匿名
+管道等。
+
+** 匿名管道
+采用socketpair()创建的匿名管道，对于Linux下具有亲缘关系的进程之间的通信是不错
+的解决方案。
+
+进程信息及管道句柄等记录在全局数据结构，ngx_processes[]，此结构在进程被fork出
+的过程中初始化；并在进程退出后更新。
+
+  #+BEGIN_EXAMPLE
+  ngx_process_t    ngx_processes[NGX_MAX_PROCESSES];     /* ngx_process.c */
+
+  typedef struct {
+    ngx_pid_t           pid;              /* 进程ID */
+    int                 status;           /* waitpid()的返回值 */
+    ngx_socket_t        channel[2];       /* 进程间通信的管道
+                                             worker[1] -- master[0]
+                                             worker[0] -- other worker[1] */
+
+    ngx_spawn_proc_pt   proc;             /* 进程入口函数 */
+    void               *data;             /* 进程私有信息; 对于worker为启动index，即0~ngx_core_conf_t->worker_processes */
+    char               *name;             /* 进程名 */
+    
+    unsigned            respawn:1;        /* 进程退出后是否自动重启 */
+    unsigned            just_spawn:1;
+    unsigned            detached:1;       /* 脱离跟踪，不和主进程及其他进程建通信管道 */
+    unsigned            exiting:1;
+    unsigned            exited:1;         /* 0/1, 是否已经退出 */
+  } ngx_process_t;
+  #+END_EXAMPLE
+
+  #+BEGIN_EXAMPLE
+  -main()
+    -ngx_master_process_cycle()
+      1-ngx_start_worker_processes()
+        -ngx_spawn_process()
+          -socketpair()
+          -fork()
+          -----------------------------子进程----------------------------
+          -ngx_worker_process_cycle()            worker进程入口
+            -ngx_worker_process_init()
+              -ngx_add_channel_event()           监听其他进程的管道描述符，处
+                                                 理句柄ngx_channel_handler()
+            -for(;;)
+          -----------------------------父进程----------------------------
+          -记录PID/管道描述符等到ngx_processes[]
+        -ngx_pass_open_channel()                 利用消息通知其他进程，有新进程加入
+          -ngx_write_channel()
+            -sendmsg()                           利用了进程间描述符传递
+      1-for(;;)                                  信号处理
+        -退出相关信号设计管道信息变更            上半阶段处理ngx_signal_handler()
+                                                 后半阶段处理在此循环中
+  #+END_EXAMPLE
+
+** 共享内存
+共享内存是Linux下进程间通信的最有效方式之一，nginx提供了统一接口以方便模块儿
+使用共享内存。
+
+  #+BEGIN_EXAMPLE
+  配置文件示例
+  http {
+     #为限速模块儿所用，ngx_http_limit_req_module
+     limit_req_zone $binary_remote_addr zone=one:10m rate=1r/s;
+     ...
+  }
+
+  配置文件解析添加共享内存
+  -ngx_http_limit_req_zone()                 "limit_req_zone"关键字处理入口，ngx_http_limit_req_module.c
+    -ngx_shared_memory_add()                 记录到ngx_cycle->shared_memory链表
+      -ngx_list_push()
+
+  创建共享内存
+  -main()
+    -ngx_init_cycle()
+      -for()                                 遍历ngx_cycle_t->shared_memory链表
+        -复用老共享内存
+        -ngx_shm_alloc()                     利用OS底层的mmap()分配内存
+        -ngx_init_zone_pool()                初始化slab管理机制
+          -初始化地址信息
+          -ngx_shmtx_create()
+            -mmap()
+          -ngx_slab_init()                   slab入口
+        -ngx_shm_zone_t->init()              格式化内存，以适配业务
+  #+END_EXAMPLE
+
+** slab机制
+nginx的slab管理分两个层级：page页，page页内的slab块儿；其中slab块儿是page
+页内存的细粒度管理。参考<智能云 - Openresty.vsdx>。
+
+  #+BEGIN_EXAMPLE
+  -ngx_slab_init()                           slab系统初始化入口，ngx_slab.c
+  -ngx_slab_alloc()                          slab系统内存分配入口, ngx_slab.c
+    -ngx_slab_alloc_locked()
+      -ngx_slab_alloc_pages()
+  #+END_EXAMPLE
+
 * 初始化插口
   - listen配置解析     :: =ngx_http_core_listen():~/src/http/ngx_http_core_module.c=
   - 建立监听插口结构   :: =ngx_http_optimize_servers():~/src/http/ngx_http.c=
@@ -120,8 +218,13 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
      -ngx_process_events_and_timers()
      -ngx_event_process_posted()
         -ngx_http_init_connection()
-        -...
-        -???ngx_http_core_run_phases()
+          -ngx_http_wait_request_handler()
+            -ngx_http_process_request_line()
+              -ngx_http_process_request_headers()
+                -ngx_http_process_request()
+                  -ngx_http_handler()
+                    -ngx_http_core_run_phases()
+                  -ngx_http_run_posted_requests()
   #+END_EXAMPLE
 * worker进程
 *入口函数* =ngx_worker_process_cycle():~/src/os/unix/ngx_process_cycle.c=
@@ -261,4 +364,9 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
   -ngx_http_output_filter()
     -ngx_http_top_body_filter()          尾部过滤链入口
   #+END_EXAMPLE
+
+* ngx_http_req_limit_module
+请求限速模块儿
+
+
 

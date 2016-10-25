@@ -31,12 +31,12 @@ typedef struct {
 
 
 typedef struct {
-    ngx_http_limit_req_shctx_t  *sh;
-    ngx_slab_pool_t             *shpool;
+    ngx_http_limit_req_shctx_t  *sh;      /* */
+    ngx_slab_pool_t             *shpool;  /* 攻下内存的起始地址，slab管理结构 */
     /* integer value, 1 corresponds to 0.001 r/s */
-    ngx_uint_t                   rate;
-    ngx_http_complex_value_t     key;
-    ngx_http_limit_req_node_t   *node;
+    ngx_uint_t                   rate;    /* 限速值 */
+    ngx_http_complex_value_t     key;     /* */
+    ngx_http_limit_req_node_t   *node;    /* */
 } ngx_http_limit_req_ctx_t;
 
 
@@ -725,7 +725,7 @@ ngx_http_limit_req_merge_conf(ngx_conf_t *cf, void *parent, void *child)
     return NGX_CONF_OK;
 }
 
-
+/* 解析配置语句"limit_req_zone $binary_remote_addr zone=one:10m rate=1r/s;" */
 static char *
 ngx_http_limit_req_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -741,11 +741,13 @@ ngx_http_limit_req_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     value = cf->args->elts;
 
+    /* 分配共享内存的使用信息环境 */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_limit_req_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
 
+    /* */
     ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
 
     ccv.cf = cf;
@@ -761,8 +763,9 @@ ngx_http_limit_req_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     scale = 1;
     name.len = 0;
 
+    /* 解析配置语句 */
     for (i = 2; i < cf->args->nelts; i++) {
-
+        /* 共享内存 */
         if (ngx_strncmp(value[i].data, "zone=", 5) == 0) {
 
             name.data = value[i].data + 5;
@@ -780,6 +783,7 @@ ngx_http_limit_req_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             s.data = p + 1;
             s.len = value[i].data + value[i].len - s.data;
 
+            /* 共享内存大小，不得小于8页 */
             size = ngx_parse_size(&s);
 
             if (size == NGX_ERROR) {
@@ -797,6 +801,7 @@ ngx_http_limit_req_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        /* 速率限制字段 */
         if (ngx_strncmp(value[i].data, "rate=", 5) == 0) {
 
             len = value[i].len;
@@ -835,6 +840,7 @@ ngx_http_limit_req_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ctx->rate = rate * 1000 / scale;
 
+    /* 解析结果加入cycle的共享内存链，待配置解析完毕后再分配 */
     shm_zone = ngx_shared_memory_add(cf, &name, size,
                                      &ngx_http_limit_req_module);
     if (shm_zone == NULL) {
@@ -850,6 +856,7 @@ ngx_http_limit_req_zone(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    /* 设置共享内存的初始化句柄，特定于模块儿；设置对应的模块儿信息环境 */
     shm_zone->init = ngx_http_limit_req_init_zone;
     shm_zone->data = ctx;
 

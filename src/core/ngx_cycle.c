@@ -410,7 +410,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     /* 创建共享内存，ngx_cycle_t->shared_memory，create shared memory */
     part = &cycle->shared_memory.part;
     shm_zone = part->elts;
-
+    
     for (i = 0; /* void */ ; i++) {
 
         if (i >= part->nelts) {
@@ -431,9 +431,13 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
 
         shm_zone[i].shm.log = cycle->log;
 
+        /* 遍历已经分配的老的共享内存，重用老内存，不再分配，但前提：
+           1)名称相同
+           2)大小相同
+           3)用途相同
+           4)没有设置不可重用标识 */
         opart = &old_cycle->shared_memory.part;
         oshm_zone = opart->elts;
-
         for (n = 0; /* void */ ; n++) {
 
             if (n >= opart->nelts) {
@@ -480,14 +484,17 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
             break;
         }
 
+        /* 新共享内存，重新分配；调用OS底层的mmap()等 */
         if (ngx_shm_alloc(&shm_zone[i].shm) != NGX_OK) {
             goto failed;
         }
 
+        /* 共享内存管理机制slab初始化 */
         if (ngx_init_zone_pool(cycle, &shm_zone[i]) != NGX_OK) {
             goto failed;
         }
 
+        /* 具体的内存初始化回调，以适配具体的业务 */
         if (shm_zone[i].init(&shm_zone[i], NULL) != NGX_OK) {
             goto failed;
         }
@@ -880,13 +887,14 @@ ngx_destroy_cycle_pools(ngx_conf_t *conf)
     ngx_destroy_pool(conf->pool);
 }
 
-
+/* 共享内存管理机制初始化，slab */
 static ngx_int_t
 ngx_init_zone_pool(ngx_cycle_t *cycle, ngx_shm_zone_t *zn)
 {
     u_char           *file;
     ngx_slab_pool_t  *sp;
 
+    /* 共享内存开头为对应的管理结构 */
     sp = (ngx_slab_pool_t *) zn->shm.addr;
 
     if (zn->shm.exists) {
@@ -917,10 +925,12 @@ ngx_init_zone_pool(ngx_cycle_t *cycle, ngx_shm_zone_t *zn)
         return NGX_ERROR;
     }
 
+    /* 初始化地址信息 */
     sp->end = zn->shm.addr + zn->shm.size;
     sp->min_shift = 3;
     sp->addr = zn->shm.addr;
 
+    /* 如有必要，分配文件锁 */
 #if (NGX_HAVE_ATOMIC_OPS)
 
     file = NULL;
@@ -936,10 +946,12 @@ ngx_init_zone_pool(ngx_cycle_t *cycle, ngx_shm_zone_t *zn)
 
 #endif
 
+    /* 初始化共享内存锁 */
     if (ngx_shmtx_create(&sp->mutex, &sp->lock, file) != NGX_OK) {
         return NGX_ERROR;
     }
 
+    /* slab管理机制初始化 */
     ngx_slab_init(sp);
 
     return NGX_OK;
@@ -1218,7 +1230,7 @@ ngx_reopen_files(ngx_cycle_t *cycle, ngx_uid_t user)
     (void) ngx_log_redirect_stderr(cycle);
 }
 
-
+/* 解析配置文件时，记录共享内存的信息到cycle的链表 */
 ngx_shm_zone_t *
 ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)
 {
@@ -1228,9 +1240,9 @@ ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)
 
     part = &cf->cycle->shared_memory.part;
     shm_zone = part->elts;
-
+    
+    /* 搜索共享内存链表，查看是否名称冲突 */
     for (i = 0; /* void */ ; i++) {
-
         if (i >= part->nelts) {
             if (part->next == NULL) {
                 break;
@@ -1250,7 +1262,7 @@ ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)
             continue;
         }
 
-        if (tag != shm_zone[i].tag) {
+        if (tag != shm_zone[i].tag) {     /* 相同名称下，区分不同的用途 */
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                             "the shared memory zone \"%V\" is "
                             "already declared for a different use",
@@ -1273,6 +1285,7 @@ ngx_shared_memory_add(ngx_conf_t *cf, ngx_str_t *name, size_t size, void *tag)
         return &shm_zone[i];
     }
 
+    /* 加入链表 */
     shm_zone = ngx_list_push(&cf->cycle->shared_memory);
 
     if (shm_zone == NULL) {

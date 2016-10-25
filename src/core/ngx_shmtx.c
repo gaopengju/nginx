@@ -14,17 +14,17 @@
 
 static void ngx_shmtx_wakeup(ngx_shmtx_t *mtx);
 
-
+/* 创建共享内存的锁 */
 ngx_int_t
 ngx_shmtx_create(ngx_shmtx_t *mtx, ngx_shmtx_sh_t *addr, u_char *name)
 {
-    mtx->lock = &addr->lock;
+    mtx->lock = &addr->lock;     /* 锁变量，实际用来保存申请锁的进程id */
 
     if (mtx->spin == (ngx_uint_t) -1) {
         return NGX_OK;
     }
 
-    mtx->spin = 2048;
+    mtx->spin = 2048;            /* 忙时，加锁最大自旋重试次数 */
 
 #if (NGX_HAVE_POSIX_SEM)
 
@@ -34,7 +34,7 @@ ngx_shmtx_create(ngx_shmtx_t *mtx, ngx_shmtx_sh_t *addr, u_char *name)
         ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, ngx_errno,
                       "sem_init() failed");
     } else {
-        mtx->semaphore = 1;
+        mtx->semaphore = 1;      /* 利用系统信号量唤醒等待锁的进程 */
     }
 
 #endif
@@ -58,14 +58,14 @@ ngx_shmtx_destroy(ngx_shmtx_t *mtx)
 #endif
 }
 
-
+/* 共享内存加锁，仅尝试一次；返回值true、false */
 ngx_uint_t
 ngx_shmtx_trylock(ngx_shmtx_t *mtx)
 {
     return (*mtx->lock == 0 && ngx_atomic_cmp_set(mtx->lock, 0, ngx_pid));
 }
 
-
+/* 共享内存加锁 */
 void
 ngx_shmtx_lock(ngx_shmtx_t *mtx)
 {
@@ -74,15 +74,35 @@ ngx_shmtx_lock(ngx_shmtx_t *mtx)
     ngx_log_debug0(NGX_LOG_DEBUG_CORE, ngx_cycle->log, 0, "shmtx lock");
 
     for ( ;; ) {
-
+        /* 原子锁，底层CPU指令支持的 比较+交换 加锁机制；成功返回new, 失败返
+           回old；这里，old设置为0, new设置为ngx_pid，因此成功后返回值为ngx_pid */
         if (*mtx->lock == 0 && ngx_atomic_cmp_set(mtx->lock, 0, ngx_pid)) {
             return;
         }
 
+        /* 多核处理器，则多次尝试；并在多次尝试期间通过pause指令改善性能和耗电量 */
         if (ngx_ncpu > 1) {
 
             for (n = 1; n < mtx->spin; n <<= 1) {
+                /* pause指令提升了自旋等待循环(spin-wait loop)的性能。当执行一
+                   个循环等待时，Intel P4或Intel Xeon处理器会因为检测到一个可能
+                   的内存顺序违规(memory order violation)而在退出循环时使性能大
+                   幅下降; PAUSE指令给处理器提了个醒：这段代码序列是个循环等待;
+                   处理器利用这个提示可以避免在大多数情况下的内存顺序违规，这将
+                   大幅提升性能。因为这个原因，所以推荐在循环等待中使用PAUSE指
+                   令。
 
+                   pause的另一个功能就是降低Intel P4在执行循环等待时的耗电量。
+                   Intel P4处理器在循环等待时会执行得非常快，这将导致处理器消
+                   耗大量的电力，而在循环中插入一个pause指令会大幅降低处理器的
+                   电力消耗。
+
+                   pause指令虽然是在Intel P4处理器开始出现的，但是它可以向后与
+                   所有的IA32处理器兼容。在早期的IA32 CPU中，pause就像NOP指令。
+                   Intel P4和Intel Xeon处理器将pause实现成一个预定义的延迟(
+                   pre-defined delay)。这种延迟是有限的，而且一些处理器可以为0。
+                   pause指令不改变处理器的架构状态(也就是说，它实际上只是执行了
+                   一个延迟——并不做任何其他事情——的操作）*/
                 for (i = 0; i < n; i++) {
                     ngx_cpu_pause();
                 }
@@ -128,11 +148,12 @@ ngx_shmtx_lock(ngx_shmtx_t *mtx)
 
 #endif
 
+        /* 尝试一定次数后，交出控制权，随后唤醒时再做尝试；提高性能!!! */
         ngx_sched_yield();
     }
 }
 
-
+/* 共享内存解锁 */
 void
 ngx_shmtx_unlock(ngx_shmtx_t *mtx)
 {
@@ -141,7 +162,7 @@ ngx_shmtx_unlock(ngx_shmtx_t *mtx)
     }
 
     if (ngx_atomic_cmp_set(mtx->lock, ngx_pid, 0)) {
-        ngx_shmtx_wakeup(mtx);
+        ngx_shmtx_wakeup(mtx);              /* 解锁后，利用信号唤醒其他进程 */
     }
 }
 
