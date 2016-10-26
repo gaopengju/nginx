@@ -19,6 +19,70 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 缓存时间设定了定量的槽位，构成缓存循环队列；以免某些请求的处理时间大于s
 的粒度，造成紊乱。
 
+* DONE 定时器管理
+  CLOSED: [2016-10-26 Wed 14:03]
+事件超时意味着等待的事件没有在指定的时间内到达，nginx有必要对这些可能发生
+超时的事件进行统一管理，并在事件发生超时时做出相应的处理，比如回收资源、
+返回错误等。
+
+超时管理需要解决两个问题，第一，超时事件对象如何组织，nginx采用红黑树；第
+儿，超时检测。
+
+nginx采用两种方式检测超时，第一，定时检测机制，通过设定定时器，每隔一段时
+间对红黑树扫瞄一次；第二，计算最快发生的事件需要等待的时间，在系统调用函数
+epoll_wait()中，设定此超时时限，以便尽快儿检测。
+
+定时检测机制通过配置指令"timer_resolution 100ms;"指定。
+
+  #+BEGIN_EXAMPLE
+  -ngx_worker_process_cycle()         worker进程入口
+    -ngx_worker_process_init()        worker进程初始化
+      -ngx_module_t->init_process()
+      =ngx_event_process_init()      
+        -ngx_event_timer_init()       红黑树初始化入口，ngx_event_timer.c
+    -for(;;)
+      -ngx_process_events_and_timers()
+        -ngx_event_find_timer()       计算最近事件的超时时间间隔
+        -ngx_event_expire_timers()    处理超时事件
+
+  添加超时事件
+  -ngx_add_timer()                    入口，ngx_event.h
+  #+END_EXAMPLE
+
+  #+BEGIN_EXAMPLE
+  定时检测机制
+     1) 通过指令"timer_resolution 100ms;"设置后，在初始化时会启动系统定时器，
+        以定期向进程发送信号；
+     2) 定时器信号SIGALRM被捕获后，设置全局变量，从而触发epoll_wait()系统调
+        用返回，并更新内部时钟；
+     3) worker进程处理请求间歇，检测到内部时钟变更，则触发超时事件树扫瞄
+  从以上描述可知，虽然信号保证了触发粒度，但worker进程只在请求处理返回后才能
+  处理超时事件，因此无法保证及时处理。考虑到nginx的请求处理速度，这不是什么
+  问题。
+
+  从流程中也可看出，采用方式二可能带来更高精度。
+
+  -ngx_worker_process_cycle()
+    -ngx_worker_process_init()
+      -ngx_module_t->init_process()
+      =ngx_event_process_init()  
+        -ngx_event_timer_init()
+        -setitimer()                  设定定时器，以定时触发ngx_timer_signal_handler()
+                                      此函数设置ngx_event_timer_alarm变量
+    -for(;;)
+      -ngx_process_events_and_timers()
+        -根据超时事件类型，设置不同标志
+          -定时扫瞄不设置标识
+          -非定时扫瞄设置标识NGX_UPDATE_TIME
+        -ngx_process_events()
+        =ngx_epoll_process_events()
+          -epoll_wait()
+          -ngx_time_update()          ngx_event_timer_alarm=1 或 设置了NGX_UPDATE_TIME标识
+        -计算运行时间
+          -只有运行了ngx_time_update()后，才有值
+        -ngx_event_expire_timers()    处理超时事件，运行时间不等于0时调用
+  #+END_EXAMPLE
+
 * 插口继承
 *函数* =ngx_add_inherited_sockets()= :~/src/core/nginx.c
 
@@ -194,43 +258,13 @@ nginx的slab管理分两个层级：page页，page页内的slab块儿；其中sl
                     --ngx_modules[]->init_process()   ~/src/os/unix/ngx_process_cycle.c
 #+END_EXAMPLE
 
-* handle phase
-  - 阶段名              :: =ngx_http_phases:~/src/http/ngx_http_core_module.h=
-  - 注册                :: =各模块儿ngx_module_t->ctx->postconfiguration()=
-  - 优化排序            :: =ngx_http_init_phase_handlers():~/src/http/ngx_http.c=
-  - 执行入口            :: =ngx_http_core_run_phases():~/src/http/ngx_http_core_module.c=
-
-  #+BEGIN_EXAMPLE
-  此四阶段不能挂接回调函数
-    NGX_HTTP_FIND_CONFIG_PHASE
-    NGX_HTTP_POST_REWRITE_PHASE
-    NGX_HTTP_POST_ACCESS_PHASE
-    NGX_HTTP_TRY_FILES_PHASE
-
-  流程
-  -ngx_init_cycle()
-     -ngx_conf_parse()
-        -ngx_http_block()
-           -递归解析
-           -ngx_module_t->ctx->postconfiguration()
-           -ngx_http_init_phase_handlers()
-     -...
-  -for(;;)                                     worker处理循环
-     -ngx_process_events_and_timers()
-     -ngx_event_process_posted()
-        -ngx_http_init_connection()
-          -ngx_http_wait_request_handler()
-            -ngx_http_process_request_line()
-              -ngx_http_process_request_headers()
-                -ngx_http_process_request()
-                  -ngx_http_handler()
-                    -ngx_http_core_run_phases()
-                  -ngx_http_run_posted_requests()
-  #+END_EXAMPLE
 * worker进程
 *入口函数* =ngx_worker_process_cycle():~/src/os/unix/ngx_process_cycle.c=
 
 * 高速IO模型
+nginx是以事件驱动的高速模型，无事件时一直阻塞在epoll_wait()--worker进程/
+sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事件，I/O事件
+和定时器事件。
   - 初始化入口           : =ngx_event_process_init():~/src/event/ngx_event.c=
   - worker主循环处理入口 : =ngx_process_events_and_timers():~/src/event/ngx_event.c=
   - EPOLL事件处理入口    : =ngx_epoll_process_events():~/src/event/modules/ngx_epoll_module.c=
@@ -325,6 +359,46 @@ nginx的slab管理分两个层级：page页，page页内的slab块儿；其中sl
   - phase handler入口    :: =ngx_http_core_run_phases()=
   - 当前处理完毕后，触发子请求   :: =ngx_http_run_posted_requests()=
 
+* 模块儿分类
+虽然nginx模块儿很多，功能各不相同，但根据其功能性质，大体上可分为4类：
+  - handlers       :: 协同完成客户端请求、产生响应数据
+  - filters        :: 过滤handler产生的数据
+  - upstream       :: 利用此模块儿，可充当反向代理的角色
+  - load-balance   :: 配合upstream，实现后端真实服务器的负载均衡
+
+* handle phase
+  - 阶段名              :: 11阶段， =ngx_http_phases:~/src/http/ngx_http_core_module.h=
+  - 注册                :: =各模块儿ngx_module_t->ctx->postconfiguration()=
+  - 优化排序            :: =ngx_http_init_phase_handlers():~/src/http/ngx_http.c=
+  - 执行入口            :: =ngx_http_core_run_phases():~/src/http/ngx_http_core_module.c=
+
+  #+BEGIN_EXAMPLE
+  此四阶段不能挂接回调函数
+    NGX_HTTP_FIND_CONFIG_PHASE
+    NGX_HTTP_POST_REWRITE_PHASE
+    NGX_HTTP_POST_ACCESS_PHASE
+    NGX_HTTP_TRY_FILES_PHASE
+
+  流程
+  -ngx_init_cycle()
+     -ngx_conf_parse()
+        -ngx_http_block()
+           -递归解析
+           -ngx_module_t->ctx->postconfiguration()
+           -ngx_http_init_phase_handlers()
+     -...
+  -for(;;)                                     worker处理循环
+     -ngx_process_events_and_timers()
+     -ngx_event_process_posted()
+        -ngx_http_init_connection()
+          -ngx_http_wait_request_handler()
+            -ngx_http_process_request_line()
+              -ngx_http_process_request_headers()
+                -ngx_http_process_request()
+                  -ngx_http_handler()
+                    -ngx_http_core_run_phases()
+                  -ngx_http_run_posted_requests()
+  #+END_EXAMPLE
 * filter模块儿
 对于http请求处理handler产生的响应内容，在发送给客户端前，需过滤处理；这
 些过滤模块儿对于增强功能、提升性能非常必要。
@@ -366,8 +440,25 @@ nginx的slab管理分两个层级：page页，page页内的slab块儿；其中sl
     -ngx_http_top_body_filter()          尾部过滤链入口
   #+END_EXAMPLE
 
-* ngx_http_req_limit_module
+* TODO upstream模块儿
+此模块儿与具体的协议无关，除HTTP外，还支持包括FASTCGI、SCGI、MEMCACHED等；
+典型应用是反向代理。
+
+* TODO load-balance模块儿
+可用称为辅助模块儿，主要为upstream模块儿服务，决定如何从多台后端服务器中
+选择一台合适的服务器来处理请求。
+
+* TODO ngx_http_req_limit_module
 请求限速模块儿
 
+* TODO ngx_http_proxy_module
+HTTP的反向代理模块儿
+
+  #+BEGIN_EXAMPLE
+  ngx_http_upstream()  解析入口
+  ngx_http_upstream_server()  server解析
+  ngx_http_proxy_pass()  proxy_pass解析入口
+  ngx_http_proxy_handler()  内容处理阶段入口
+  #+END_EXAMPLE
 
 

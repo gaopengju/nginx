@@ -198,12 +198,14 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
     ngx_uint_t  flags;
     ngx_msec_t  timer, delta;
 
-    /* 定时器相关 */
-    if (ngx_timer_resolution) {
+    /* 超时事件 */
+    if (ngx_timer_resolution) {            /* 定期监控模式，依赖在ngx_event_process_init()
+                                              中设定的定时器，值为ngx_timer_resolution  */
         timer = NGX_TIMER_INFINITE;
         flags = 0;
 
-    } else {
+    } else {                               /* 计算最近发生事件的超时时限，后续
+                                              系统调用epoll_wait()阻塞的最长时间 */
         timer = ngx_event_find_timer();
         flags = NGX_UPDATE_TIME;
 
@@ -249,6 +251,7 @@ ngx_process_events_and_timers(ngx_cycle_t *cycle)
       然后迅速返回；调用ngx_epoll_process_events() */
     (void) ngx_process_events(cycle, timer, flags);
 
+    /* 计算epoll系统的运行时间，ngx_time_update()执行后才!＝0 */
     delta = ngx_current_msec - delta;
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
@@ -565,7 +568,7 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
 
 #if !(NGX_WIN32)
-
+/* 定期触发扫瞄超时事件树的时钟处理函数 */
 static void
 ngx_timer_signal_handler(int signo)
 {
@@ -578,7 +581,7 @@ ngx_timer_signal_handler(int signo)
 
 #endif
 
-
+/* 超时事件处理模块儿初始化 */
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
 {
@@ -643,6 +646,8 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     }
 
 #if !(NGX_WIN32)
+    /* 对应配置指令"timer_resolution 100ms;"，此时需要启动定时器以便定期触发
+       对超时事件的监控 */
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT)) {
         struct sigaction  sa;
         struct itimerval  itv;

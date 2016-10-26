@@ -257,6 +257,8 @@ struct ngx_module_s {
                                             NGX_CORE_MODULE
                                             NGX_EVENT_MODULE
                                             NGX_HTTP_MODULE等 */
+
+    /* 以下为回调函数，时机可根据名字猜测 */
     ngx_int_t           (*init_master)(ngx_log_t *log);
 
     ngx_int_t           (*init_module)(ngx_cycle_t *cycle);

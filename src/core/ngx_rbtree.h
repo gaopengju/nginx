@@ -16,9 +16,8 @@
 typedef ngx_uint_t  ngx_rbtree_key_t;
 typedef ngx_int_t   ngx_rbtree_key_int_t;
 
-
+/* 红黑树节点 */
 typedef struct ngx_rbtree_node_s  ngx_rbtree_node_t;
-
 struct ngx_rbtree_node_s {
     ngx_rbtree_key_t       key;
     ngx_rbtree_node_t     *left;
@@ -33,11 +32,11 @@ typedef struct ngx_rbtree_s  ngx_rbtree_t;
 
 typedef void (*ngx_rbtree_insert_pt) (ngx_rbtree_node_t *root,
     ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel);
-
+/* 超时事件红黑树 */
 struct ngx_rbtree_s {
-    ngx_rbtree_node_t     *root;
-    ngx_rbtree_node_t     *sentinel;
-    ngx_rbtree_insert_pt   insert;
+    ngx_rbtree_node_t     *root;      /* 树根 */
+    ngx_rbtree_node_t     *sentinel;  /* 哨兵节点，指向变量ngx_event_timer_sentinel */
+    ngx_rbtree_insert_pt   insert;    /* 插入动作句柄，=ngx_rbtree_insert_timer_value() */
 };
 
 

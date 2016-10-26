@@ -26,7 +26,7 @@ typedef struct {
 
 #endif
 
-
+/* nginx超时事件对象 */
 struct ngx_event_s {
     void            *data;                     /* 等待ACCEPT事件时，指向对应的请求结构，ngx_connection_t */
 
@@ -56,8 +56,8 @@ struct ngx_event_s {
     unsigned         eof:1;
     unsigned         error:1;
 
-    unsigned         timedout:1;              /* 客户端请求是否已超时？ */
-    unsigned         timer_set:1;
+    unsigned         timedout:1;              /* 当前事件是否超时? */
+    unsigned         timer_set:1;             /* 当前事件是否已加入红黑树 */
 
     unsigned         delayed:1;
 
@@ -127,7 +127,7 @@ struct ngx_event_s {
 
     ngx_log_t       *log;
 
-    ngx_rbtree_node_t   timer;
+    ngx_rbtree_node_t   timer;           /* 插入到红黑树的节点 */
 
     /* the posted queue */
     ngx_queue_t      queue;
