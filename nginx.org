@@ -359,6 +359,15 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
   - phase handler入口    :: =ngx_http_core_run_phases()=
   - 当前处理完毕后，触发子请求   :: =ngx_http_run_posted_requests()=
 
+* TODO 子请求
+待作
+
+* TODO keepalive机制
+待做
+
+* TODO 关闭链接
+延迟关闭
+
 * 模块儿分类
 虽然nginx模块儿很多，功能各不相同，但根据其功能性质，大体上可分为4类：
   - handlers       :: 协同完成客户端请求、产生响应数据

@@ -291,7 +291,9 @@ ngx_http_init_connection(ngx_connection_t *c)
         }
     }
 
-    /* 利用默认虚拟服务器的配置信息，the default server configuration for the address:port */
+    /* 利用默认虚拟服务器的配置信息，后面还需通过查找虚拟服务器重新定位
+       配置---ngx_http_find_virtual_server()
+       the default server configuration for the address:port */
     hc->conf_ctx = hc->addr_conf->default_server->ctx;
 
     ctx = ngx_palloc(c->pool, sizeof(ngx_http_log_ctx_t));
