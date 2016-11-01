@@ -1380,7 +1380,9 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     /* ngx_http_request_t->content_handler优先级最高, 调用后不再调用其他注
        册的句柄, 主要提供给upstream等模块儿使用
 
-       对于ngx_http_proxy_module--upstream模块儿, 为ngx_http_proxy_handler() */
+       对于ngx_http_proxy_module--upstream模块儿, 为ngx_http_proxy_handler()
+       
+       对于ngx_http_lua_module--nginx lua模块儿，为ngx_http_lua_content_handler() */
     if (r->content_handler) {
         r->write_event_handler = ngx_http_request_empty_handler;
         ngx_http_finalize_request(r, r->content_handler(r));
