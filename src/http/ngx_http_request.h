@@ -369,7 +369,9 @@ struct ngx_http_request_s {
 
     ngx_connection_t                 *connection;        /* 指向当前的请求连接 */
 
-    void                            **ctx;
+    void                            **ctx;               /* 对应各个模块儿的执行环境，
+                                                            如ngx_http_lua_module的
+                                                            ngx_http_lua_ctx_t */
     void                            **main_conf;         /* 默认虚拟服务器的配置信息 */
     void                            **srv_conf;
     void                            **loc_conf;
