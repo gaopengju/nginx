@@ -47,6 +47,7 @@ epoll_wait()中，设定此超时时限，以便尽快儿检测。
 
   添加超时事件
   -ngx_add_timer()                    入口，ngx_event.h
+    -ngx_event_add_timer()            ngx_event_timer.h
   #+END_EXAMPLE
 
   #+BEGIN_EXAMPLE
