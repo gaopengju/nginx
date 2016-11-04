@@ -458,9 +458,11 @@ struct ngx_http_request_s {
 
     ngx_http_log_handler_pt           log_handler;
 
-    ngx_http_cleanup_t               *cleanup;
+    ngx_http_cleanup_t               *cleanup;         /* 资源清理的处理句柄链表；被各个
+                                                          模块儿注册，以清理各模块儿的
+                                                          特定资源 */
 
-    unsigned                          count:16;
+    unsigned                          count:16;        /* */
     unsigned                          subrequests:8;
     unsigned                          blocked:8;
 

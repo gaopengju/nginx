@@ -2707,7 +2707,8 @@ ngx_http_named_location(ngx_http_request_t *r, ngx_str_t *name)
     return NGX_DONE;
 }
 
-
+/* 被各模块儿调用，以添加特定模块儿的自定义资源清理句柄；后续
+   请求资源释放时，被调用，清理各模块儿的特定资源 */
 ngx_http_cleanup_t *
 ngx_http_cleanup_add(ngx_http_request_t *r, size_t size)
 {
