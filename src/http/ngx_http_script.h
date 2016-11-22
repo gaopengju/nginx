@@ -73,8 +73,8 @@ typedef struct {
 
 typedef struct {
     ngx_conf_t                 *cf;
-    ngx_str_t                  *value;
-    ngx_http_complex_value_t   *complex_value;
+    ngx_str_t                  *value;           /* 待解析编译的字符串 */
+    ngx_http_complex_value_t   *complex_value;   /* 解析编译结果 */
 
     unsigned                    zero:1;
     unsigned                    conf_prefix:1;

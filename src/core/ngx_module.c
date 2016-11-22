@@ -25,8 +25,8 @@
     &ngx_http_index_module,
     &ngx_http_auth_basic_module,
     &ngx_http_access_module,
-    &ngx_http_limit_conn_module,
-    &ngx_http_limit_req_module,
+    &ngx_http_limit_conn_module,            NGX_HTTP_MODULE, 基于连接的限速模块儿
+    &ngx_http_limit_req_module,             NGX_HTTP_MODULE, 基于key的限速模块儿
     &ngx_http_geo_module,
     &ngx_http_map_module,
     &ngx_http_split_clients_module,

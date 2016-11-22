@@ -37,9 +37,9 @@ typedef struct {
 
 
 typedef struct {
-    ngx_array_t                limits;
-    ngx_uint_t                 log_level;
-    ngx_uint_t                 status_code;
+    ngx_array_t                limits;             /* */
+    ngx_uint_t                 log_level;          /* */
+    ngx_uint_t                 status_code;        /* */
 } ngx_http_limit_conn_conf_t;
 
 
