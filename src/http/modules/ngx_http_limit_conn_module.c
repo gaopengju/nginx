@@ -32,14 +32,14 @@ typedef struct {
 
 typedef struct {
     ngx_shm_zone_t            *shm_zone;
-    ngx_uint_t                 conn;
+    ngx_uint_t                 conn;               /* 并存链接上限，并非速率 */
 } ngx_http_limit_conn_limit_t;
 
 
 typedef struct {
-    ngx_array_t                limits;             /* */
-    ngx_uint_t                 log_level;          /* */
-    ngx_uint_t                 status_code;        /* */
+    ngx_array_t                limits;             /* 链接限速策略数组 */
+    ngx_uint_t                 log_level;          /* 日志级别 */
+    ngx_uint_t                 status_code;        /* 超过限速后，应答状态值，默认503 */
 } ngx_http_limit_conn_conf_t;
 
 
@@ -120,7 +120,7 @@ static ngx_http_module_t  ngx_http_limit_conn_module_ctx = {
     ngx_http_limit_conn_merge_conf         /* merge location configuration */
 };
 
-
+/* 限链接模块儿 */
 ngx_module_t  ngx_http_limit_conn_module = {
     NGX_MODULE_V1,
     &ngx_http_limit_conn_module_ctx,       /* module context */
@@ -136,7 +136,7 @@ ngx_module_t  ngx_http_limit_conn_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* 限制链接模块儿的入口句柄 */
 static ngx_int_t
 ngx_http_limit_conn_handler(ngx_http_request_t *r)
 {
@@ -157,20 +157,21 @@ ngx_http_limit_conn_handler(ngx_http_request_t *r)
         return NGX_DECLINED;
     }
 
+    /* 获取location对应的限链接策略数组 */
     lccf = ngx_http_get_module_loc_conf(r, ngx_http_limit_conn_module);
     limits = lccf->limits.elts;
 
+    /* 遍历限链接策略数组 */
     for (i = 0; i < lccf->limits.nelts; i++) {
         ctx = limits[i].shm_zone->data;
 
+        /* 获取KEY值 */
         if (ngx_http_complex_value(r, &ctx->key, &key) != NGX_OK) {
             return NGX_HTTP_INTERNAL_SERVER_ERROR;
         }
-
         if (key.len == 0) {
             continue;
         }
-
         if (key.len > 255) {
             ngx_log_error(NGX_LOG_ERR, r->connection->log, 0,
                           "the value of the \"%V\" key "
@@ -179,18 +180,18 @@ ngx_http_limit_conn_handler(ngx_http_request_t *r)
             continue;
         }
 
+        /* 已经处理过链接限制 */
         r->main->limit_conn_set = 1;
 
+        /* 计算hash值 */
         hash = ngx_crc32_short(key.data, key.len);
-
         shpool = (ngx_slab_pool_t *) limits[i].shm_zone->shm.addr;
-
         ngx_shmtx_lock(&shpool->mutex);
 
+        /* 红黑树查找 */
         node = ngx_http_limit_conn_lookup(ctx->rbtree, &key, hash);
-
         if (node == NULL) {
-
+            /* 未找到，加入 */
             n = offsetof(ngx_rbtree_node_t, color)
                 + offsetof(ngx_http_limit_conn_node_t, data)
                 + key.len;
@@ -207,28 +208,25 @@ ngx_http_limit_conn_handler(ngx_http_request_t *r)
 
             node->key = hash;
             lc->len = (u_char) key.len;
-            lc->conn = 1;
+            lc->conn = 1;                /* 初始值为1 */
             ngx_memcpy(lc->data, key.data, key.len);
 
             ngx_rbtree_insert(ctx->rbtree, node);
-
         } else {
-
+            /* 有对应的节点，限链接处理 */
             lc = (ngx_http_limit_conn_node_t *) &node->color;
 
             if ((ngx_uint_t) lc->conn >= limits[i].conn) {
-
                 ngx_shmtx_unlock(&shpool->mutex);
-
                 ngx_log_error(lccf->log_level, r->connection->log, 0,
                               "limiting connections by zone \"%V\"",
                               &limits[i].shm_zone->shm.name);
 
                 ngx_http_limit_conn_cleanup_all(r->pool);
-                return lccf->status_code;
+                return lccf->status_code;/* 超过限速阈值，返回503状态码 */
             }
 
-            lc->conn++;
+            lc->conn++;                  /* 核心算法：累积计数 */
         }
 
         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -236,6 +234,7 @@ ngx_http_limit_conn_handler(ngx_http_request_t *r)
 
         ngx_shmtx_unlock(&shpool->mutex);
 
+        /* 添加本请求的计数清理回调，当请求结束销毁时，减少链接数 */
         cln = ngx_pool_cleanup_add(r->pool,
                                    sizeof(ngx_http_limit_conn_cleanup_t));
         if (cln == NULL) {
@@ -633,7 +632,9 @@ ngx_http_limit_conn(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    if (n > 65535) {
+    if (n > 65535) {       /* 链接限速不能大于65535, 否则就么有限速效果了；
+                              理论最大值为65535, 因为五元组中只有源PORT可变，
+                              源PORT的最大可用范围是65535 */
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "connection limit must be less 65536");
         return NGX_CONF_ERROR;
@@ -664,7 +665,7 @@ ngx_http_limit_conn_init(ngx_conf_t *cf)
         return NGX_ERROR;
     }
 
-    *h = ngx_http_limit_conn_handler;
+    *h = ngx_http_limit_conn_handler;    /* 注册限链接模块儿处理入口句柄 */
 
     return NGX_OK;
 }

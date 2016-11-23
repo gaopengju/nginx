@@ -524,8 +524,49 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
      :   3) 若数据包到达的速率-漏桶流出的速率>配置的漏桶突发速率，且数据包的
      :      数量已经超过漏桶的容量，则这些数据包将被丢弃
 
-* TODO ngx_http_limit_conn_module
-abc
+* DONE ngx_http_limit_conn_module
+  CLOSED: [2016-11-23 Wed 18:29]
+nginx提供了基于KEY限制链接的模块儿，比如限制来自某个IP的链接总数；内部通过
+"简单链接++计数(较限速模块儿简单许多)，当请求结束后--"实现。
+
+  #+BEGIN_EXAMPLE
+  执行阶段
+      NGX_HTTP_PREACCESS_PHASE
+
+  流程
+  -ngx_init_cycle()
+     -ngx_conf_parse()
+        -ngx_http_block()
+           -递归解析
+             -ngx_http_limit_conn_zone()            处理配置指令limit_conn_zone
+             -ngx_http_limit_conn()                 处理limit_conn
+             -ngx_conf_set_enum_slot()              处理limit_conn_log_level
+             -ngx_conf_set_num_slot()               处理limit_conn_status
+           -ngx_module_t->ctx->postconfiguration()
+             -ngx_http_limit_conn_init()            注册处理句柄ngx_http_limit_conn_handler()
+
+     -...
+  -for(;;)                                          worker处理循环
+     -ngx_process_events_and_timers()
+     -ngx_event_process_posted()
+       -...
+       -ngx_http_core_run_phases()
+         -ngx_http_limit_conn_handler()             限速处理, ~/src/http/modules/ngx_http_limit_conn_module.c
+  
+  #+END_EXAMPLE
+
+** 典型配置
+  #+BEGIN_EXAMPLE
+  http {
+    limit_conn_zone $binary_remote_addr zone=one:10m;
+                                           #定义限链接区域，one，空间10M大小
+    ...
+    server {
+        ...
+        location /search/ {
+            limit_conn zone=one 5;         #基于源IP的限链接，并存的链接不能大于5
+        }
+  #+END_EXAMPLE
 
 * TODO ngx_http_proxy_module
 HTTP的反向代理模块儿

@@ -531,8 +531,8 @@ struct ngx_http_request_s {
      * ngx_http_limit_conn_module and ngx_http_limit_req_module
      * we use the single bits in the request structure
      */
-    unsigned                          limit_conn_set:1;     /* 限连接标识 */
-    unsigned                          limit_req_set:1;      /* 限速标识 */
+    unsigned                          limit_conn_set:1;     /* 限连接已处理标识 */
+    unsigned                          limit_req_set:1;      /* 限速已处理标识 */
 
 #if 0
     unsigned                          cacheable:1;
