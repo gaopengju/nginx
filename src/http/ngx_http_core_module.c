@@ -463,7 +463,7 @@ static ngx_command_t  ngx_http_core_commands[] = {
       offsetof(ngx_http_core_loc_conf_t, postpone_output),
       NULL },
 
-    { ngx_string("limit_rate"),
+    { ngx_string("limit_rate"),           /* 基于会话的限速 */
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF
                         |NGX_CONF_TAKE1,
       ngx_conf_set_size_slot,
@@ -471,7 +471,7 @@ static ngx_command_t  ngx_http_core_commands[] = {
       offsetof(ngx_http_core_loc_conf_t, limit_rate),
       NULL },
 
-    { ngx_string("limit_rate_after"),
+    { ngx_string("limit_rate_after"),     /* 设置会话的限速基准 */
       NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_HTTP_LIF_CONF
                         |NGX_CONF_TAKE1,
       ngx_conf_set_size_slot,

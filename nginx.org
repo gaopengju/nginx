@@ -540,4 +540,34 @@ HTTP的反向代理模块儿
 * TODO 正则编译解析
 abd
 
+* 变量 =limit_rate/limit_rate_after=
+NGINX提供了限制服务器回应速率的手段；通过使用 =ngx_add_timer= 函数实现对
+write event的控制，进而实现速度上限的控制。
+
+ =limit_rate= 限制了应答传输速率，单位 =bytes/s= ；0表示不限制； 此
+限制是基于链接的，并且可以通过变量$limit_rate动态设置，因此可以根据
+特定场景，设置不同的值，非常灵活、方便。
+
+=limit_rate_after= 如其名字，当应答报文的大小超过了设定值后，才开始
+限速。
+
+  #+BEGIN_EXAMPLE
+  nginx典型配置如下：
+
+  location /flv/ {
+    ...
+    limit_rate_after 500k;
+    limit_rate       50k;
+  }
+  #+END_EXAMPLE
+
+** 入口
+限制入口位于模块儿ngx_http_write_filter_module的处理函数；此模块儿
+实现发送过滤，位于整个过滤链 =ngx_http_top_body_filter= 的尾端。
+
+  #+BEGIN_EXAMPLE
+  ngx_http_write_filter(): ~/src/http/ngx_http_write_filter_module.c
+  #+END_EXAMPLE
+
+
 

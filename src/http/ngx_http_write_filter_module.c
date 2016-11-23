@@ -27,7 +27,7 @@ static ngx_http_module_t  ngx_http_write_filter_module_ctx = {
     NULL,                                  /* merge location configuration */
 };
 
-
+/* 输出过滤模块儿 */
 ngx_module_t  ngx_http_write_filter_module = {
     NGX_MODULE_V1,
     &ngx_http_write_filter_module_ctx,     /* module context */
@@ -67,7 +67,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
     ll = &r->out;
 
     /* find the size, the flush point and the last link of the saved chain */
-
+    /* 计算已缓存的待发送数据的大小 */
     for (cl = r->out; cl; cl = cl->next) {
         ll = &cl->next;
 
@@ -115,15 +115,14 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
         }
     }
 
-    /* add the new chain to the existent one */
-
+    /* 缓存新数据，并累积大小，add the new chain to the existent one */
     for (ln = in; ln; ln = ln->next) {
         cl = ngx_alloc_chain_link(r->pool);
         if (cl == NULL) {
             return NGX_ERROR;
         }
 
-        cl->buf = ln->buf;
+        cl->buf = ln->buf;       /* 缓存数据 */
         *ll = cl;
         ll = &cl->next;
 
@@ -182,17 +181,18 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
      * avoid the output if there are no last buf, no flush point,
      * there are the incoming bufs and the size of all bufs
      * is smaller than "postpone_output" directive
-     */
-
+     *//* 未收到最后的buf或未设置flush标识，则暂时不发送 */
     if (!last && !flush && in && size < (off_t) clcf->postpone_output) {
         return NGX_OK;
     }
 
+    /* 延迟发送，直接返回 */
     if (c->write->delayed) {
         c->buffered |= NGX_HTTP_WRITE_BUFFERED;
         return NGX_AGAIN;
     }
 
+    /* 发送完毕, 刷新缓冲区??? */
     if (size == 0
         && !(c->buffered & NGX_LOWLEVEL_BUFFERED)
         && !(last && c->need_last_buf))
@@ -218,11 +218,16 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
         return NGX_ERROR;
     }
 
+    /* 正式发送前，限速；此值可通过指令"limit_rate"配置，也可通过
+       变量"$limit_rate"设置 */
     if (r->limit_rate) {
-        if (r->limit_rate_after == 0) {
-            r->limit_rate_after = clcf->limit_rate_after;
+        if (r->limit_rate_after == 0) {    /* 通过指令"limit_rate_after"配置 */
+            r->limit_rate_after = clcf->limit_rate_after; /* 表示开始限速的起点 */
         }
 
+        /* 计算需要限速的字节数，可放过的理论值 - 已经发送的值
+             1) >0  发送速度慢，不限速
+             2) <0  发送速度快，限速 */
         limit = (off_t) r->limit_rate * (ngx_time() - r->start_sec + 1)
                 - (c->sent - r->limit_rate_after);
 
@@ -233,7 +238,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
 
             c->buffered |= NGX_HTTP_WRITE_BUFFERED;
 
-            return NGX_AGAIN;
+            return NGX_AGAIN;              /* 定时器限速 */
         }
 
         if (clcf->sendfile_max_chunk
@@ -261,6 +266,8 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
         return NGX_ERROR;
     }
 
+    /* 上述->send_chain()异步IO，如果已经发送了部分数据，即更新了->send,
+       则根据限速适当增加延迟值 */
     if (r->limit_rate) {
 
         nsent = c->sent;
@@ -287,6 +294,7 @@ ngx_http_write_filter(ngx_http_request_t *r, ngx_chain_t *in)
         }
     }
 
+    /* 微调限速 */
     if (limit
         && c->write->ready
         && c->sent - sent >= limit - (off_t) (2 * ngx_pagesize))
