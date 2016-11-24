@@ -323,7 +323,7 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
             -ngx_http_add_variable()       ngx_http_rewrite_module模块儿的"set"
             -ngx_http_get_variable_index() 指令，同时也加入->variables表
         -...
-        -ngx_http_variables_init_vars()  合法性检测
+        -ngx_http_variables_init_vars()  配置文件引用的变量的合法性检测
   ----------------------------------------------------
   -ngx_http_init_connection()            ~/src/http/ngx_http_request.c
     -ngx_http_wait_request_handler()     接收请求
@@ -578,8 +578,27 @@ HTTP的反向代理模块儿
   ngx_http_proxy_handler()  内容处理阶段入口
   #+END_EXAMPLE
 
-* TODO 正则编译解析
-abd
+* DONE 脚本引擎
+  CLOSED: [2016-11-24 Thu 17:36]
+编译字符串为可执行脚本
+  #+BEGIN_EXAMPLE
+  -ngx_http_compile_complex_value()                编译入口，~/src/http/ngx_http_script.c
+    -ngx_http_script_compile()
+      -ngx_http_script_add_capture_code()          生成捕捉变量脚本
+      -ngx_http_script_add_var_code()              生成普通变量脚本
+      -ngx_http_script_add_args_code()             生成参数脚本
+      -ngx_http_script_add_copy_code()             生成普通字符串(非变量、非参数)脚本
+      -ngx_http_script_done()
+  #+END_EXAMPLE
+
+执行脚本
+  #+BEGIN_EXAMPLE
+  -ngx_http_complex_value()                        获取变量值，ngx_http_script.c
+    -ngx_http_script_flush_complex_value()         清空不可缓存的变量值
+    -执行脚本组->lengths，获取所有变量长度
+    -分配内存以盛放结果
+    -执行脚本组->values，获取变量的值
+  #+END_EXAMPLE
 
 * 变量 =limit_rate/limit_rate_after=
 NGINX提供了限制服务器回应速率的手段；通过使用 =ngx_add_timer= 函数实现对

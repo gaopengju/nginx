@@ -16,19 +16,19 @@
 /* 脚本引擎执行时所需的堆栈, 后进先出, 用于保存中间的变量等信息 */
 typedef struct {
     u_char                     *ip;           /* 当前脚本的回调指针 */
-    u_char                     *pos;
+    u_char                     *pos;          /* 当前的解析结果，指向->buf的某个位置 */
     ngx_http_variable_value_t  *sp;           /* 栈顶指针, 临时保存变量值, 用于在
                                                  脚本之间传递数据 */
-    ngx_str_t                   buf;
+    ngx_str_t                   buf;          /* 变量值的结果内存 */
     ngx_str_t                   line;
 
     /* the start of the rewritten arguments */
-    u_char                     *args;
+    u_char                     *args;         /* 参数的位置，=当前的pos */
 
-    unsigned                    flushed:1;
+    unsigned                    flushed:1;    /* 是否已清空非可缓存的变量值 */
     unsigned                    skip:1;
     unsigned                    quote:1;
-    unsigned                    is_args:1;
+    unsigned                    is_args:1;    /* 当前为参数 */
     unsigned                    log:1;
 
     ngx_int_t                   status;
@@ -37,37 +37,37 @@ typedef struct {
 
 
 typedef struct {
-    ngx_conf_t                 *cf;
-    ngx_str_t                  *source;
+    ngx_conf_t                 *cf;              /* 配置信息 */
+    ngx_str_t                  *source;          /* 待解析字符串 */
 
-    ngx_array_t               **flushes;
-    ngx_array_t               **lengths;
-    ngx_array_t               **values;
+    ngx_array_t               **flushes;         /* 变量对应的索引(对应ngx_http_core_main_conf_t->variables[]下标)数组 */
+    ngx_array_t               **lengths;         /* 获取变量长度的脚本数组 */
+    ngx_array_t               **values;          /* 获取变量值的脚本数组 */
 
-    ngx_uint_t                  variables;
-    ngx_uint_t                  ncaptures;
-    ngx_uint_t                  captures_mask;
-    ngx_uint_t                  size;
+    ngx_uint_t                  variables;       /* source字符串的变量个数 */
+    ngx_uint_t                  ncaptures;       /* 最大的捕捉变量索引值 */
+    ngx_uint_t                  captures_mask;   /* 捕捉变量索引掩码，bit位 */
+    ngx_uint_t                  size;            /* */
 
-    void                       *main;
+    void                       *main;            /* NULL */
 
-    unsigned                    compile_args:1;
-    unsigned                    complete_lengths:1;
-    unsigned                    complete_values:1;
-    unsigned                    zero:1;
-    unsigned                    conf_prefix:1;
-    unsigned                    root_prefix:1;
+    unsigned                    compile_args:1;  /* 0, 是否编译参数 */
+    unsigned                    complete_lengths:1;   /* 1 */
+    unsigned                    complete_values:1;    /* 1 */
+    unsigned                    zero:1;               /* 0, 脚本是否需要以NULL结尾 */
+    unsigned                    conf_prefix:1;        /* 0 */
+    unsigned                    root_prefix:1;        /* 0 */
 
-    unsigned                    dup_capture:1;
-    unsigned                    args:1;
+    unsigned                    dup_capture:1;   /* 是否有重复的捕捉变量 */
+    unsigned                    args:1;          /* 0, 是否解析参数 */
 } ngx_http_script_compile_t;
 
-
+/* 字符串编译的结果，包括各种脚本 */
 typedef struct {
-    ngx_str_t                   value;
-    ngx_uint_t                 *flushes;
-    void                       *lengths;
-    void                       *values;
+    ngx_str_t                   value;           /* 原始字符串，或简单值 */
+    ngx_uint_t                 *flushes;         /* 存储普通变量的索引(对应ngx_http_core_main_conf_t->variables[]下标) */
+    void                       *lengths;         /* 存储获取变量值长度的脚本 */
+    void                       *values;          /* 存储获取变量值的脚本 */
 } ngx_http_complex_value_t;
 
 
@@ -108,7 +108,7 @@ typedef struct {
 
 typedef struct {
     ngx_http_script_code_pt     code;
-    uintptr_t                   n;
+    uintptr_t                   n;     /* 捕捉变量的索引 * 2; 2和PCRE相关 */
 } ngx_http_script_copy_capture_code_t;
 
 

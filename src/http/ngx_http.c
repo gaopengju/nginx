@@ -296,7 +296,7 @@ ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    /* 初始化nginx支持的HTTP头部 */
+    /* 初始化nginx支持的HTTP头部，并注册对应的解析函数 */
     if (ngx_http_init_headers_in_hash(cf, cmcf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }

@@ -178,7 +178,7 @@ typedef struct {
           2) 添加判断是否执行回调的checker函数； */
     ngx_http_phase_engine_t    phase_engine;
     
-    /*各模块儿对http特定头的处理回调
+    /*各模块儿对http特定头的处理回调, 解析报文头时被调用，以赋值相应的字段
          如, http模块的ngx_http_headers_in[]
              upstream模块儿的ngx_http_upstream_headers_in[]*/
     ngx_hash_t                 headers_in_hash;
