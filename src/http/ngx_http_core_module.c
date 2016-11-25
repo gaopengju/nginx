@@ -1382,7 +1382,9 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
 
        对于ngx_http_proxy_module--upstream模块儿, 为ngx_http_proxy_handler()
        
-       对于ngx_http_lua_module--nginx lua模块儿，为ngx_http_lua_content_handler() */
+       对于ngx_http_lua_module--nginx lua模块儿，为ngx_http_lua_content_handler() 
+
+       对于ngx_http_stub_status_module模块儿，为ngx_http_stub_status_handler() */
     if (r->content_handler) {
         r->write_event_handler = ngx_http_request_empty_handler;
         ngx_http_finalize_request(r, r->content_handler(r));
@@ -1500,11 +1502,12 @@ ngx_http_update_location_config(ngx_http_request_t *r)
         r->connection->tcp_nopush = NGX_TCP_NOPUSH_DISABLED;
     }
 
-    if (r->limit_rate == 0) {
+    if (r->limit_rate == 0) {              /* 继承基于会话的限速 */
         r->limit_rate = clcf->limit_rate;
     }
 
-    if (clcf->handler) {
+    if (clcf->handler) {                   /* 本地特定处理，如ngx_http_stub_status_module模块儿的
+                                                  处理函数ngx_http_stub_status_handler()*/
         r->content_handler = clcf->handler;
     }
 }

@@ -59,9 +59,9 @@ ngx_int_t             ngx_accept_disabled;       /* = ngx_cycle_t->connection_n 
 
 #if (NGX_STAT_STUB)
 
-ngx_atomic_t   ngx_stat_accepted0;
+ngx_atomic_t   ngx_stat_accepted0;               /* 被ngx_http_stub_status_module模块儿利用的信息 */
 ngx_atomic_t  *ngx_stat_accepted = &ngx_stat_accepted0;
-ngx_atomic_t   ngx_stat_handled0;
+ngx_atomic_t   ngx_stat_handled0;                /* 单进程模式，多进程模式利用共享内存 */
 ngx_atomic_t  *ngx_stat_handled = &ngx_stat_handled0;
 ngx_atomic_t   ngx_stat_requests0;
 ngx_atomic_t  *ngx_stat_requests = &ngx_stat_requests0;
@@ -497,7 +497,8 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
 
     /* cl should be equal to or greater than cache line size */
-
+    /* 分配共享内存，用于统计，比如模块儿ngx_http_stub_status_module；
+        此处为主从进程模式，单进程模式则利用单一变量 */
     cl = 128;
 
     size = cl            /* ngx_accept_mutex */

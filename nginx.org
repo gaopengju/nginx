@@ -458,6 +458,60 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
 可用称为辅助模块儿，主要为upstream模块儿服务，决定如何从多台后端服务器中
 选择一台合适的服务器来处理请求。
 
+* DONE ngx_http_limit_conn_module
+  CLOSED: [2016-11-23 Wed 18:29]
+nginx提供了基于KEY限制链接的模块儿，比如限制来自某个IP的链接总数；内部通过
+"简单链接++计数(较限速模块儿简单许多)，当请求结束后--"实现。
+
+  #+BEGIN_EXAMPLE
+  执行阶段
+      NGX_HTTP_PREACCESS_PHASE
+
+  流程
+  -ngx_init_cycle()
+     -ngx_conf_parse()
+        -ngx_http_block()
+           -递归解析
+             -ngx_http_limit_conn_zone()            处理配置指令limit_conn_zone
+             -ngx_http_limit_conn()                 处理limit_conn
+             -ngx_conf_set_enum_slot()              处理limit_conn_log_level
+             -ngx_conf_set_num_slot()               处理limit_conn_status
+           -ngx_module_t->ctx->postconfiguration()
+             -ngx_http_limit_conn_init()            注册处理句柄ngx_http_limit_conn_handler()
+
+     -...
+  -for(;;)                                          worker处理循环
+     -ngx_process_events_and_timers()
+     -ngx_event_process_posted()
+       -...
+       -ngx_http_core_run_phases()
+         -ngx_http_limit_conn_handler()             限速处理, ~/src/http/modules/ngx_http_limit_conn_module.c
+  
+  #+END_EXAMPLE
+
+** 典型配置
+  #+BEGIN_EXAMPLE
+  http {
+    limit_conn_zone $binary_remote_addr zone=one:10m;
+                                           #定义限链接区域，one，空间10M大小
+    ...
+    server {
+        ...
+        location /search/ {
+            limit_conn zone=one 5;         #基于源IP的限链接，并存的链接不能大于5
+        }
+  #+END_EXAMPLE
+
+* TODO ngx_http_proxy_module
+HTTP的反向代理模块儿
+
+  #+BEGIN_EXAMPLE
+  ngx_http_upstream()  解析入口
+  ngx_http_upstream_server()  server解析
+  ngx_http_proxy_pass()  proxy_pass解析入口
+  ngx_http_proxy_handler()  内容处理阶段入口
+  #+END_EXAMPLE
+
 * DONE ngx_http_req_limit_module
   CLOSED: [2016-11-21 Mon 17:47]
 本模块儿用于限制特定key的访问速率，比如限制来自某个IP的处理速率；内部通过
@@ -524,59 +578,57 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
      :   3) 若数据包到达的速率-漏桶流出的速率>配置的漏桶突发速率，且数据包的
      :      数量已经超过漏桶的容量，则这些数据包将被丢弃
 
-* DONE ngx_http_limit_conn_module
-  CLOSED: [2016-11-23 Wed 18:29]
-nginx提供了基于KEY限制链接的模块儿，比如限制来自某个IP的链接总数；内部通过
-"简单链接++计数(较限速模块儿简单许多)，当请求结束后--"实现。
-
+* DONE ngx_http_stub_status_module
+  CLOSED: [2016-11-25 Fri 14:19]
+此模块儿默认不编译，因此需添加配置参数，如下：
   #+BEGIN_EXAMPLE
-  执行阶段
-      NGX_HTTP_PREACCESS_PHASE
-
-  流程
-  -ngx_init_cycle()
-     -ngx_conf_parse()
-        -ngx_http_block()
-           -递归解析
-             -ngx_http_limit_conn_zone()            处理配置指令limit_conn_zone
-             -ngx_http_limit_conn()                 处理limit_conn
-             -ngx_conf_set_enum_slot()              处理limit_conn_log_level
-             -ngx_conf_set_num_slot()               处理limit_conn_status
-           -ngx_module_t->ctx->postconfiguration()
-             -ngx_http_limit_conn_init()            注册处理句柄ngx_http_limit_conn_handler()
-
-     -...
-  -for(;;)                                          worker处理循环
-     -ngx_process_events_and_timers()
-     -ngx_event_process_posted()
-       -...
-       -ngx_http_core_run_phases()
-         -ngx_http_limit_conn_handler()             限速处理, ~/src/http/modules/ngx_http_limit_conn_module.c
+  ./configure --with-http_stub_status_module ...(other params)
+  #+END_EXAMPLE
+此模块儿可通过配置指令"stub_status"在某个"location{}"环境注册静态
+页面，以方便返回统计信息，配置如下：
+  #+BEGIN_EXAMPLE
+  location /basic_status {
+    stub_status;
+  }
   
+  可通过curl此地址查看统计信息。
   #+END_EXAMPLE
 
-** 典型配置
+
+执行到配置了“stub_status”的location后，靠此模块儿注册的回调句柄生
+成页面内容，并会送。
   #+BEGIN_EXAMPLE
-  http {
-    limit_conn_zone $binary_remote_addr zone=one:10m;
-                                           #定义限链接区域，one，空间10M大小
-    ...
-    server {
-        ...
-        location /search/ {
-            limit_conn zone=one 5;         #基于源IP的限链接，并存的链接不能大于5
-        }
+  -ngx_http_core_run_phases()             阶段执行函数入口，~/src/http/ngx_http_core_module.c
+    -ngx_http_core_find_config_phase()    NGX_HTTP_FIND_CONFIG_PHASE句柄
+      -ngx_http_update_location_config()  设置ngx_http_request_t->content_handler，页面生成句柄
+    -ngx_http_core_content_phase()        NGX_HTTP_CONTENT_PHASE句柄
+      -ngx_http_stub_status_handler()     利用ngx_http_request_t->content_handler，生成页面
+                                             ~/src/http/modules/ngx_http_stub_status_module.c
   #+END_EXAMPLE
 
-* TODO ngx_http_proxy_module
-HTTP的反向代理模块儿
 
+那这些信息是在哪里统计的呢？
   #+BEGIN_EXAMPLE
-  ngx_http_upstream()  解析入口
-  ngx_http_upstream_server()  server解析
-  ngx_http_proxy_pass()  proxy_pass解析入口
-  ngx_http_proxy_handler()  内容处理阶段入口
+  原子变量定义，~/src/event/ngx_event.c
+
+  ngx_atomic_t   ngx_stat_accepted0;      单进程模式，利用此变量
+  ngx_atomic_t  *ngx_stat_accepted = &ngx_stat_accepted0;
+  ...
   #+END_EXAMPLE
+  #+BEGIN_EXAMPLE
+  原子变量内存地址，主从进程模式，利用共享内存
+
+  -main()                                入口，~/src/core/nginx.c
+      -ngx_init_cycle()
+          -ngx_conf_parse()              配置解析
+          -ngx_init_modules()            模块儿启动前的特殊准备，主要针对集成的第三方
+            -ngx_cycle_t->modules[]->init_module()
+            -ngx_event_module_init()     ngx_event_core_module模块儿，~/src/event/ngx_event.c
+              -ngx_shmtx_create()        分配共享内存，用于统计的变量，如ngx_stat_xxx
+  #+END_EXAMPLE
+
+
+这些信息在哪里统计呢？在 =ngx_event_core_module= 模块儿，如 =ngx_event_accept()= 等
 
 * DONE 脚本引擎
   CLOSED: [2016-11-24 Thu 17:36]

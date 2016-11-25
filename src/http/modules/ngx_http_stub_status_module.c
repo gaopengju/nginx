@@ -32,7 +32,7 @@ static ngx_command_t  ngx_http_status_commands[] = {
 
 
 static ngx_http_module_t  ngx_http_stub_status_module_ctx = {
-    ngx_http_stub_status_add_variables,    /* preconfiguration */
+    ngx_http_stub_status_add_variables,    /* 注册暴露的统计变量 */
     NULL,                                  /* postconfiguration */
 
     NULL,                                  /* create main configuration */
@@ -45,7 +45,8 @@ static ngx_http_module_t  ngx_http_stub_status_module_ctx = {
     NULL                                   /* merge location configuration */
 };
 
-
+/* nginx的统计模块儿；通过配置指令“stub_status”注册静态页面，以返回
+   已统计的结果 */
 ngx_module_t  ngx_http_stub_status_module = {
     NGX_MODULE_V1,
     &ngx_http_stub_status_module_ctx,      /* module context */
@@ -61,7 +62,7 @@ ngx_module_t  ngx_http_stub_status_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* 统计变量 */
 static ngx_http_variable_t  ngx_http_stub_status_vars[] = {
 
     { ngx_string("connections_active"), NULL, ngx_http_stub_status_variable,
@@ -79,7 +80,7 @@ static ngx_http_variable_t  ngx_http_stub_status_vars[] = {
     { ngx_null_string, NULL, NULL, 0, 0, 0 }
 };
 
-
+/* 通过URL获取统计模块儿的统计结果 */
 static ngx_int_t
 ngx_http_stub_status_handler(ngx_http_request_t *r)
 {
@@ -159,7 +160,7 @@ ngx_http_stub_status_handler(ngx_http_request_t *r)
     return ngx_http_output_filter(r, &out);
 }
 
-
+/* 通过读取变量获取统计结果 */
 static ngx_int_t
 ngx_http_stub_status_variable(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data)
@@ -204,7 +205,7 @@ ngx_http_stub_status_variable(ngx_http_request_t *r,
     return NGX_OK;
 }
 
-
+/* 注册暴露到外界的变量，可为Lua或者配置文件使用 */
 static ngx_int_t
 ngx_http_stub_status_add_variables(ngx_conf_t *cf)
 {
