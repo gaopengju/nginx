@@ -53,33 +53,33 @@
 #define ngx_ssl_session_t       SSL_SESSION
 #define ngx_ssl_conn_t          SSL
 
-
+/* 创建的SSL环境 */
 typedef struct {
-    SSL_CTX                    *ctx;
+    SSL_CTX                    *ctx;          /* openssl底层支持的SSL环境 */
     ngx_log_t                  *log;
-    size_t                      buffer_size;
+    size_t                      buffer_size;  /* 接收报文缓存大小 */
 } ngx_ssl_t;
 
-
+/* 对应具体HTTP连接的SSL信息,  ngx_connection_t->ssl */
 typedef struct {
-    ngx_ssl_conn_t             *connection;
-    SSL_CTX                    *session_ctx;
+    ngx_ssl_conn_t             *connection;   /* SSL对象，”#define ngx_ssl_conn_t SSL” */
+    SSL_CTX                    *session_ctx;  /* SSL环境 */
 
     ngx_int_t                   last;
     ngx_buf_t                  *buf;
     size_t                      buffer_size;
 
-    ngx_connection_handler_pt   handler;
+    ngx_connection_handler_pt   handler;      /* ngx_http_ssl_handshake_handler() */
 
     ngx_event_handler_pt        saved_read_handler;
     ngx_event_handler_pt        saved_write_handler;
 
-    unsigned                    handshaked:1;
-    unsigned                    renegotiation:1;
-    unsigned                    buffer:1;
-    unsigned                    no_wait_shutdown:1;
-    unsigned                    no_send_shutdown:1;
-    unsigned                    handshake_buffer_set:1;
+    unsigned                    handshaked:1;           /* 0/1, 握手完成 */
+    unsigned                    renegotiation:1;        /* 开始重协商 */
+    unsigned                    buffer:1;               /* */
+    unsigned                    no_wait_shutdown:1;     /* */
+    unsigned                    no_send_shutdown:1;     /* */
+    unsigned                    handshake_buffer_set:1; /* */
 } ngx_ssl_connection_t;
 
 

@@ -235,7 +235,7 @@ main(int argc, char *const *argv)
         return 1;
     }
 
-    /* STUB */
+    /* SSL环境初始化，STUB */
 #if (NGX_OPENSSL)
     ngx_ssl_init(log);
 #endif

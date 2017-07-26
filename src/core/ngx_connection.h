@@ -161,7 +161,7 @@ struct ngx_connection_s {
     in_port_t           proxy_protocol_port;
 
 #if (NGX_SSL)
-    ngx_ssl_connection_t  *ssl;
+    ngx_ssl_connection_t  *ssl;          /* 维护SSL信息，包括SSL对象等 */
 #endif
 
     struct sockaddr    *local_sockaddr;  /* 本连接绑定的本机地址 */

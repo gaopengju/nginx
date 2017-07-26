@@ -69,7 +69,7 @@ static ngx_conf_enum_t  ngx_http_ssl_verify[] = {
     { ngx_null_string, 0 }
 };
 
-
+/* 支持的配置指令 */
 static ngx_command_t  ngx_http_ssl_commands[] = {
 
     { ngx_string("ssl"),
@@ -238,24 +238,24 @@ static ngx_command_t  ngx_http_ssl_commands[] = {
 
 
 static ngx_http_module_t  ngx_http_ssl_module_ctx = {
-    ngx_http_ssl_add_variables,            /* preconfiguration */
+    ngx_http_ssl_add_variables,            /* 添加HTTP支持的SSL变量，preconfiguration */
     ngx_http_ssl_init,                     /* postconfiguration */
 
     NULL,                                  /* create main configuration */
     NULL,                                  /* init main configuration */
 
     ngx_http_ssl_create_srv_conf,          /* create server configuration */
-    ngx_http_ssl_merge_srv_conf,           /* merge server configuration */
+    ngx_http_ssl_merge_srv_conf,           /* 合并配置项，并据此创建SSL环境，merge server configuration */
 
     NULL,                                  /* create location configuration */
     NULL                                   /* merge location configuration */
 };
 
-
+/* HTTP SSL模块儿，依赖于底层的 ngx_openssl_module */
 ngx_module_t  ngx_http_ssl_module = {
     NGX_MODULE_V1,
     &ngx_http_ssl_module_ctx,              /* module context */
-    ngx_http_ssl_commands,                 /* module directives */
+    ngx_http_ssl_commands,                 /* 支持的配置指令，module directives */
     NGX_HTTP_MODULE,                       /* module type */
     NULL,                                  /* init master */
     NULL,                                  /* init module */
@@ -267,7 +267,7 @@ ngx_module_t  ngx_http_ssl_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* http SSL支持的变量 */
 static ngx_http_variable_t  ngx_http_ssl_vars[] = {
 
     { ngx_string("ssl_protocol"), NULL, ngx_http_ssl_static_variable,
@@ -474,7 +474,7 @@ ngx_http_ssl_variable(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     return NGX_OK;
 }
 
-
+/* 添加可处理的变量 */
 static ngx_int_t
 ngx_http_ssl_add_variables(ngx_conf_t *cf)
 {
@@ -647,6 +647,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         }
     }
 
+    /* 创建SSL环境 */
     if (ngx_ssl_create(&conf->ssl, conf->protocols, conf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -674,6 +675,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
                                           ngx_http_ssl_npn_advertised, NULL);
 #endif
 
+    /* 构建清理回调 */
     cln = ngx_pool_cleanup_add(cf->pool, 0);
     if (cln == NULL) {
         return NGX_CONF_ERROR;
@@ -682,6 +684,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     cln->handler = ngx_ssl_cleanup_ctx;
     cln->data = &conf->ssl;
 
+    /* 加载证书及对应的私钥 */
     if (ngx_ssl_certificates(cf, &conf->ssl, conf->certificates,
                              conf->certificate_keys, conf->passwords)
         != NGX_OK)
@@ -689,6 +692,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         return NGX_CONF_ERROR;
     }
 
+    /* 加载算法套件 */
     if (ngx_ssl_ciphers(cf, &conf->ssl, &conf->ciphers,
                         conf->prefer_server_ciphers)
         != NGX_OK)
@@ -698,6 +702,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 
     conf->ssl.buffer_size = conf->buffer_size;
 
+    /* 加载客户端认证 */
     if (conf->verify) {
 
         if (conf->client_certificate.len == 0 && conf->verify != 3) {
@@ -715,6 +720,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         }
     }
 
+    /* 加载信任的CA证书 */
     if (ngx_ssl_trusted_certificate(cf, &conf->ssl,
                                     &conf->trusted_certificate,
                                     conf->verify_depth)
@@ -723,6 +729,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         return NGX_CONF_ERROR;
     }
 
+    /* 加载CRL表 */
     if (ngx_ssl_crl(cf, &conf->ssl, &conf->crl) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -742,6 +749,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         conf->shm_zone = prev->shm_zone;
     }
 
+    /* 会话恢复 */
     if (ngx_ssl_session_cache(&conf->ssl, &ngx_http_ssl_sess_id_ctx,
                               conf->builtin_session_cache,
                               conf->shm_zone, conf->session_timeout)
@@ -767,6 +775,7 @@ ngx_http_ssl_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
         return NGX_CONF_ERROR;
     }
 
+    /* */
     if (conf->stapling) {
 
         if (ngx_ssl_stapling(cf, &conf->ssl, &conf->stapling_file,

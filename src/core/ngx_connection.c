@@ -10,7 +10,7 @@
 #include <ngx_event.h>
 
 
-ngx_os_io_t  ngx_io;                         /* 系统底层IO，EPOLL为ngx_os_io */
+ngx_os_io_t  ngx_io;                         /* 系统底层IO，EPOLL为 ngx_os_io */
 
 
 static void ngx_drain_connections(void);

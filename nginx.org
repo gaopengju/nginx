@@ -681,5 +681,43 @@ write event的控制，进而实现速度上限的控制。
   ngx_http_write_filter(): ~/src/http/ngx_http_write_filter_module.c
   #+END_EXAMPLE
 
+* SSL
+ - ngx_openssl_module
+   : 定义在~/src/event/ngx_event_openssl.c
+   : 对接底层openssl库
+ - ngx_http_ssl_module
+   : 定义在~/src/http/modules/ngx_http_ssl_module.c
+   : 对接用户配置指令，提供SSL服务器的能力
+
+#+BEGIN_EXAMPLE
+做为SSL服务器的处理流程
+-main()                            ~/src/core/nginx.c
+  -ngx_ssl_init()                  初始化SSL环境，~/src/event/ngx_event_openssl.c
+  -ngx_init_cycle()                解析配置
+    -ngx_http_ssl_merge_srv_conf()   解析配置后，合并结果, ~/src/http/modules/ngx_http_ssl_module.c
+      -ngx_ssl_create()              创建SSL环境
+      -ngx_ssl_certificates()        加载证书及私钥
+      -ngx_ssl_ciphers()             加载指定套件
+      -ngx_ssl_client_certificate()  加载客户端认证
+      -ngx_ssl_trusted_certificate()
+      -ngx_ssl_crl()                 加载CRL表
+      -ngx_ssl_dhparam()
+      -ngx_ssl_ecdh_curve()
+      -ngx_ssl_session_cache()       会话恢复
+      -ngx_ssl_session_ticket_keys()
+      -ngx_ssl_stapling()
+  -ngx_master_process_cycle()      启动worker进程，进入事件循环
+    -ngx_process_events_and_timers() EPOLL处理入口
+      -ngx_event_process_posted()    处理accept事件
+        -ngx_event_accept()
+          -accept()
+          -ngx_http_init_connection()
+            -ngx_event_t->handler      设定接收数据的处理句柄=ngx_http_ssl_handshake()
+      -ngx_event_process_posted()    处理收发报文事件
+        -ngx_http_ssl_handshake()      SSL接收数据并处理, ~/src/http/ngx_http_request.c
+          -ngx_ssl_create_connection()
+          -ngx_ssl_handshake()              握手成功后，设置底层收发处理函数为ngx_ssl_recv/ngx_ssl_write()(~/src/event/ngx_event_openssl.c)
+          -ngx_http_ssl_handshake_handler() 握手完成后，设置SSL解密后的处理入口为ngx_http_wait_request_handler()
+#+END_EXAMPLE
 
 

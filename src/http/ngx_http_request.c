@@ -625,7 +625,7 @@ ngx_http_create_request(ngx_connection_t *c)
 
 
 #if (NGX_HTTP_SSL)
-
+/* SSL接收数据的处理函数入口 */
 static void
 ngx_http_ssl_handshake(ngx_event_t *rev)
 {
@@ -657,6 +657,7 @@ ngx_http_ssl_handshake(ngx_event_t *rev)
 
     size = hc->proxy_protocol ? sizeof(buf) : 1;
 
+    /* 偷窥第1个字节 */
     n = recv(c->fd, (char *) buf, size, MSG_PEEK);
 
     err = ngx_socket_errno;
@@ -713,6 +714,7 @@ ngx_http_ssl_handshake(ngx_event_t *rev)
         buf[0] = *p;
     }
 
+    /* 根据第1个字节判断是否为SSL */
     if (n == 1) {
         if (buf[0] & 0x80 /* SSLv2 */ || buf[0] == 0x16 /* SSLv3/TLSv1 */) {
             ngx_log_debug1(NGX_LOG_DEBUG_HTTP, rev->log, 0,
@@ -720,7 +722,7 @@ ngx_http_ssl_handshake(ngx_event_t *rev)
 
             sscf = ngx_http_get_module_srv_conf(hc->conf_ctx,
                                                 ngx_http_ssl_module);
-
+            /* 创建SSL对象，并关联到nginx的连接 */
             if (ngx_ssl_create_connection(&sscf->ssl, c, NGX_SSL_BUFFER)
                 != NGX_OK)
             {
@@ -728,6 +730,7 @@ ngx_http_ssl_handshake(ngx_event_t *rev)
                 return;
             }
 
+            /* 握手 */
             rc = ngx_ssl_handshake(c);
 
             if (rc == NGX_AGAIN) {
@@ -742,6 +745,7 @@ ngx_http_ssl_handshake(ngx_event_t *rev)
                 return;
             }
 
+            /* 握手成功，后续处理 */
             ngx_http_ssl_handshake_handler(c);
 
             return;
@@ -761,10 +765,11 @@ ngx_http_ssl_handshake(ngx_event_t *rev)
     ngx_http_close_connection(c);
 }
 
-
+/* 握手流程的状态处理函数 */
 static void
 ngx_http_ssl_handshake_handler(ngx_connection_t *c)
 {
+    /* 握手完成 */
     if (c->ssl->handshaked) {
 
         /*
@@ -773,8 +778,7 @@ ngx_http_ssl_handshake_handler(ngx_connection_t *c)
          * and Links.  And what is more, MSIE ignores the server's alert.
          *
          * Opera and recent Mozilla send the alert.
-         */
-
+         *//* */
         c->ssl->no_wait_shutdown = 1;
 
 #if (NGX_HTTP_V2                                                              \
@@ -812,6 +816,8 @@ ngx_http_ssl_handshake_handler(ngx_connection_t *c)
 
         c->log->action = "waiting for request";
 
+        /* 后续报文处理回到正轨，不过接收函数需要替换为 ngx_ssl_recv/ngx_ssl_write(), 
+           以便接收报文后解密/发送报文前解密 */
         c->read->handler = ngx_http_wait_request_handler;
         /* STUB: epoll edge */ c->write->handler = ngx_http_empty_handler;
 
@@ -822,10 +828,10 @@ ngx_http_ssl_handshake_handler(ngx_connection_t *c)
         return;
     }
 
+    /* 读超时，关闭连接 */
     if (c->read->timedout) {
         ngx_log_error(NGX_LOG_INFO, c->log, NGX_ETIMEDOUT, "client timed out");
     }
-
     ngx_http_close_connection(c);
 }
 

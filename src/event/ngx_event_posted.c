@@ -31,8 +31,9 @@ ngx_event_process_posted(ngx_cycle_t *cycle, ngx_queue_t *posted)
         ngx_delete_posted_event(ev);
 
         ev->handler(ev);            /* 调用对应的处理函数 
-                                          ACCEPT事件:ngx_event_accept/ngx_event_recvmsg
-                                          普通HTTP处理事件:ngx_http_wait_request_handler()
+                                          ACCEPT事件: ngx_event_accept/ngx_event_recvmsg()
+                                          普通HTTP处理事件: ngx_http_wait_request_handler()
+                                          SSL处理事件: ngx_http_ssl_handshake()
                                      */
     }
 }

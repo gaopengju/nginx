@@ -14,7 +14,7 @@
 
 
 typedef struct {
-    ngx_uint_t  engine;   /* unsigned  engine:1; */
+    ngx_uint_t  engine;   /* 是否已经使能了硬件加速设备；unsigned  engine:1; */
 } ngx_openssl_conf_t;
 
 
@@ -66,7 +66,7 @@ static void ngx_openssl_exit(ngx_cycle_t *cycle);
 
 static ngx_command_t  ngx_openssl_commands[] = {
 
-    { ngx_string("ssl_engine"),
+    { ngx_string("ssl_engine"),   /* 指定硬件加速卡设备, 如默认内置的软引擎为"ssl_engine openssl" */
       NGX_MAIN_CONF|NGX_DIRECT_CONF|NGX_CONF_TAKE1,
       ngx_openssl_engine,
       0,
@@ -83,7 +83,7 @@ static ngx_core_module_t  ngx_openssl_module_ctx = {
     NULL
 };
 
-
+/* 定义了openssl模块儿, 为上层 ngx_http_ssl_module 提供服务 */
 ngx_module_t  ngx_openssl_module = {
     NGX_MODULE_V1,
     &ngx_openssl_module_ctx,               /* module context */
@@ -108,12 +108,12 @@ int  ngx_ssl_certificate_index;
 int  ngx_ssl_next_certificate_index;
 int  ngx_ssl_stapling_index;
 
-
+/* 初始化SSL环境，openssl库初始化 */
 ngx_int_t
 ngx_ssl_init(ngx_log_t *log)
 {
 #if OPENSSL_VERSION_NUMBER >= 0x10100003L
-
+    /* 加载配置信息 */
     OPENSSL_init_ssl(OPENSSL_INIT_LOAD_CONFIG, NULL);
 
 #else
@@ -149,6 +149,7 @@ ngx_ssl_init(ngx_log_t *log)
 #endif
 #endif
 
+    /* 分配应用数据 */
     ngx_ssl_connection_index = SSL_get_ex_new_index(0, NULL, NULL, NULL, NULL);
 
     if (ngx_ssl_connection_index == -1) {
@@ -209,13 +210,14 @@ ngx_ssl_init(ngx_log_t *log)
 ngx_int_t
 ngx_ssl_create(ngx_ssl_t *ssl, ngx_uint_t protocols, void *data)
 {
+    /* 创建SSL环境 */
     ssl->ctx = SSL_CTX_new(SSLv23_method());
-
     if (ssl->ctx == NULL) {
         ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0, "SSL_CTX_new() failed");
         return NGX_ERROR;
     }
 
+    /* 保存配置信息, ngx_http_ssl_srv_conf_t */
     if (SSL_CTX_set_ex_data(ssl->ctx, ngx_ssl_server_conf_index, data) == 0) {
         ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
                       "SSL_CTX_set_ex_data() failed");
@@ -228,10 +230,10 @@ ngx_ssl_create(ngx_ssl_t *ssl, ngx_uint_t protocols, void *data)
         return NGX_ERROR;
     }
 
+    /* 设置接收缓存大小 */
     ssl->buffer_size = NGX_SSL_BUFSIZE;
 
     /* client side options */
-
 #ifdef SSL_OP_MICROSOFT_SESS_ID_BUG
     SSL_CTX_set_options(ssl->ctx, SSL_OP_MICROSOFT_SESS_ID_BUG);
 #endif
@@ -241,7 +243,6 @@ ngx_ssl_create(ngx_ssl_t *ssl, ngx_uint_t protocols, void *data)
 #endif
 
     /* server side options */
-
 #ifdef SSL_OP_SSLREF2_REUSE_CERT_TYPE_BUG
     SSL_CTX_set_options(ssl->ctx, SSL_OP_SSLREF2_REUSE_CERT_TYPE_BUG);
 #endif
@@ -313,8 +314,10 @@ ngx_ssl_create(ngx_ssl_t *ssl, ngx_uint_t protocols, void *data)
     SSL_CTX_set_mode(ssl->ctx, SSL_MODE_NO_AUTO_CHAIN);
 #endif
 
+    /* 预读取报文??? */
     SSL_CTX_set_read_ahead(ssl->ctx, 1);
 
+    /* 设置调试回调 */
     SSL_CTX_set_info_callback(ssl->ctx, ngx_ssl_info_callback);
 
     return NGX_OK;
@@ -332,7 +335,6 @@ ngx_ssl_certificates(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_array_t *certs,
     key = keys->elts;
 
     for (i = 0; i < certs->nelts; i++) {
-
         if (ngx_ssl_certificate(cf, ssl, &cert[i], &key[i], passwords)
             != NGX_OK)
         {
@@ -363,7 +365,6 @@ ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
      * allow to access certificate later from SSL_CTX, so we reimplement
      * it here
      */
-
     bio = BIO_new_file((char *) cert->data, "r");
     if (bio == NULL) {
         ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
@@ -371,6 +372,7 @@ ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
         return NGX_ERROR;
     }
 
+    /* 解析 */
     x509 = PEM_read_bio_X509_AUX(bio, NULL, NULL, NULL);
     if (x509 == NULL) {
         ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
@@ -379,6 +381,7 @@ ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
         return NGX_ERROR;
     }
 
+    /* 加载 */
     if (SSL_CTX_use_certificate(ssl->ctx, x509) == 0) {
         ngx_ssl_error(NGX_LOG_EMERG, ssl->log, 0,
                       "SSL_CTX_use_certificate(\"%s\") failed", cert->data);
@@ -387,6 +390,7 @@ ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
         return NGX_ERROR;
     }
 
+    /* 保存到openssl应用数据 */
     if (X509_set_ex_data(x509, ngx_ssl_next_certificate_index,
                       SSL_CTX_get_ex_data(ssl->ctx, ngx_ssl_certificate_index))
         == 0)
@@ -396,7 +400,6 @@ ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
         BIO_free(bio);
         return NGX_ERROR;
     }
-
     if (SSL_CTX_set_ex_data(ssl->ctx, ngx_ssl_certificate_index, x509)
         == 0)
     {
@@ -407,10 +410,8 @@ ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
         return NGX_ERROR;
     }
 
-    /* read rest of the chain */
-
+    /* 加载剩余公钥证书，read rest of the chain */
     for ( ;; ) {
-
         x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
         if (x509 == NULL) {
             n = ERR_peek_last_error();
@@ -541,8 +542,8 @@ ngx_ssl_certificate(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *cert,
 #endif
     }
 
+    /* 加载对应的私钥 */
     for ( ;; ) {
-
         if (SSL_CTX_use_PrivateKey_file(ssl->ctx, (char *) key->data,
                                         SSL_FILETYPE_PEM)
             != 0)
@@ -1120,7 +1121,7 @@ ngx_ssl_ecdh_curve(ngx_conf_t *cf, ngx_ssl_t *ssl, ngx_str_t *name)
     return NGX_OK;
 }
 
-
+/* 创建*/
 ngx_int_t
 ngx_ssl_create_connection(ngx_ssl_t *ssl, ngx_connection_t *c, ngx_uint_t flags)
 {
@@ -1136,18 +1137,20 @@ ngx_ssl_create_connection(ngx_ssl_t *ssl, ngx_connection_t *c, ngx_uint_t flags)
 
     sc->session_ctx = ssl->ctx;
 
+    /* 创建SSL对象 */
     sc->connection = SSL_new(ssl->ctx);
-
     if (sc->connection == NULL) {
         ngx_ssl_error(NGX_LOG_ALERT, c->log, 0, "SSL_new() failed");
         return NGX_ERROR;
     }
 
+    /* 关联插口FD */
     if (SSL_set_fd(sc->connection, c->fd) == 0) {
         ngx_ssl_error(NGX_LOG_ALERT, c->log, 0, "SSL_set_fd() failed");
         return NGX_ERROR;
     }
 
+    /* 设置角色 */
     if (flags & NGX_SSL_CLIENT) {
         SSL_set_connect_state(sc->connection);
 
@@ -1155,11 +1158,13 @@ ngx_ssl_create_connection(ngx_ssl_t *ssl, ngx_connection_t *c, ngx_uint_t flags)
         SSL_set_accept_state(sc->connection);
     }
 
+    /* 保存应用数据 */
     if (SSL_set_ex_data(sc->connection, ngx_ssl_connection_index, c) == 0) {
         ngx_ssl_error(NGX_LOG_ALERT, c->log, 0, "SSL_set_ex_data() failed");
         return NGX_ERROR;
     }
 
+    /* 关联到nginx的连接数据结构 */
     c->ssl = sc;
 
     return NGX_OK;
@@ -1179,7 +1184,7 @@ ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
     return NGX_OK;
 }
 
-
+/* 握手 */
 ngx_int_t
 ngx_ssl_handshake(ngx_connection_t *c)
 {
@@ -1188,10 +1193,12 @@ ngx_ssl_handshake(ngx_connection_t *c)
 
     ngx_ssl_clear_error(c->log);
 
+    /* 执行握手流程 */
     n = SSL_do_handshake(c->ssl->connection);
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_do_handshake: %d", n);
 
+    /* 握手结束，且成功 */
     if (n == 1) {
 
         if (ngx_handle_read_event(c->read, 0) != NGX_OK) {
@@ -1249,9 +1256,9 @@ ngx_ssl_handshake(ngx_connection_t *c)
         }
 #endif
 
-        c->ssl->handshaked = 1;
+        c->ssl->handshaked = 1;    /* 握手成功 */
 
-        c->recv = ngx_ssl_recv;
+        c->recv = ngx_ssl_recv;    /* 设置后续收发函数 */
         c->send = ngx_ssl_write;
         c->recv_chain = ngx_ssl_recv_chain;
         c->send_chain = ngx_ssl_send_chain;
@@ -1274,6 +1281,7 @@ ngx_ssl_handshake(ngx_connection_t *c)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_get_error: %d", sslerr);
 
+    /* 握手失败，等待客户端后续报文 */
     if (sslerr == SSL_ERROR_WANT_READ) {
         c->read->ready = 0;
         c->read->handler = ngx_ssl_handshake_handler;
@@ -1290,6 +1298,7 @@ ngx_ssl_handshake(ngx_connection_t *c)
         return NGX_AGAIN;
     }
 
+    /* 握手失败，等待本地构造可写数据 */
     if (sslerr == SSL_ERROR_WANT_WRITE) {
         c->write->ready = 0;
         c->read->handler = ngx_ssl_handshake_handler;
@@ -1306,6 +1315,7 @@ ngx_ssl_handshake(ngx_connection_t *c)
         return NGX_AGAIN;
     }
 
+    /* 其他错误，失败退出 */
     err = (sslerr == SSL_ERROR_SYSCALL) ? ngx_errno : 0;
 
     c->ssl->no_wait_shutdown = 1;
@@ -1336,16 +1346,18 @@ ngx_ssl_handshake_handler(ngx_event_t *ev)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0,
                    "SSL handshake handler: %d", ev->write);
-
+    /* 超时 */
     if (ev->timedout) {
         c->ssl->handler(c);
         return;
     }
 
+    /* 继续握手协商 */
     if (ngx_ssl_handshake(c) == NGX_AGAIN) {
         return;
     }
 
+    /* 握手协商结束, ngx_ssl_connection_t->handler=ngx_http_ssl_handshake_handler() */
     c->ssl->handler(c);
 }
 
@@ -1408,7 +1420,7 @@ ngx_ssl_recv_chain(ngx_connection_t *c, ngx_chain_t *cl, off_t limit)
     }
 }
 
-
+/* 握手成功后，SSL环境下的接收报文的函数 */
 ssize_t
 ngx_ssl_recv(ngx_connection_t *c, u_char *buf, size_t size)
 {
@@ -1432,21 +1444,17 @@ ngx_ssl_recv(ngx_connection_t *c, u_char *buf, size_t size)
     /*
      * SSL_read() may return data in parts, so try to read
      * until SSL_read() would return no data
-     */
-
+     *//* 一直调用SSL_read()直到没有数据为止 */
     for ( ;; ) {
-
+        /* 读取数据报文 */
         n = SSL_read(c->ssl->connection, buf, size);
-
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_read: %d", n);
-
         if (n > 0) {
             bytes += n;
         }
 
         c->ssl->last = ngx_ssl_handle_recv(c, n);
-
-        if (c->ssl->last == NGX_OK) {
+        if (c->ssl->last == NGX_OK) {  /* 缓存已满，处理 */
 
             size -= n;
 
@@ -1460,7 +1468,7 @@ ngx_ssl_recv(ngx_connection_t *c, u_char *buf, size_t size)
             continue;
         }
 
-        if (bytes) {
+        if (bytes) {                   /* 处理已缓存数据，一般为数据读取完毕(对应NGX_AGAIN) */
             if (c->ssl->last != NGX_AGAIN) {
                 c->read->ready = 1;
             }
@@ -1468,7 +1476,7 @@ ngx_ssl_recv(ngx_connection_t *c, u_char *buf, size_t size)
             return bytes;
         }
 
-        switch (c->ssl->last) {
+        switch (c->ssl->last) {        /* 无数据，其他 */
 
         case NGX_DONE:
             c->read->ready = 0;
@@ -1493,6 +1501,7 @@ ngx_ssl_handle_recv(ngx_connection_t *c, int n)
     int        sslerr;
     ngx_err_t  err;
 
+    /* 不支持重协商，直接错误返回 */
     if (c->ssl->renegotiation) {
         /*
          * disable renegotiation (CVE-2009-3555):
@@ -1515,6 +1524,7 @@ ngx_ssl_handle_recv(ngx_connection_t *c, int n)
         return NGX_ERROR;
     }
 
+    /* 接收到正常数据 */
     if (n > 0) {
 
         if (c->ssl->saved_write_handler) {
@@ -1533,18 +1543,19 @@ ngx_ssl_handle_recv(ngx_connection_t *c, int n)
         return NGX_OK;
     }
 
+    /* 错误处理 */
     sslerr = SSL_get_error(c->ssl->connection, n);
 
     err = (sslerr == SSL_ERROR_SYSCALL) ? ngx_errno : 0;
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_get_error: %d", sslerr);
 
-    if (sslerr == SSL_ERROR_WANT_READ) {
+    if (sslerr == SSL_ERROR_WANT_READ) {   /* 需要读取数据 */
         c->read->ready = 0;
         return NGX_AGAIN;
     }
 
-    if (sslerr == SSL_ERROR_WANT_WRITE) {
+    if (sslerr == SSL_ERROR_WANT_WRITE) {  /* 需要写数据 */
 
         ngx_log_error(NGX_LOG_INFO, c->log, 0,
                       "peer started SSL renegotiation");
@@ -1565,7 +1576,7 @@ ngx_ssl_handle_recv(ngx_connection_t *c, int n)
         }
 
         return NGX_AGAIN;
-    }
+    }                                      /* 其他错误，关闭连接 */
 
     c->ssl->no_wait_shutdown = 1;
     c->ssl->no_send_shutdown = 1;
@@ -1755,7 +1766,7 @@ ngx_ssl_send_chain(ngx_connection_t *c, ngx_chain_t *in, off_t limit)
     return in;
 }
 
-
+/* SSL环境下的报文输出函数 */
 ssize_t
 ngx_ssl_write(ngx_connection_t *c, u_char *data, size_t size)
 {
@@ -1766,6 +1777,7 @@ ngx_ssl_write(ngx_connection_t *c, u_char *data, size_t size)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL to write: %uz", size);
 
+    /* 输出数据 */
     n = SSL_write(c->ssl->connection, data, size);
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_write: %d", n);
@@ -1796,11 +1808,13 @@ ngx_ssl_write(ngx_connection_t *c, u_char *data, size_t size)
 
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_get_error: %d", sslerr);
 
+    /* 需要继续写 */
     if (sslerr == SSL_ERROR_WANT_WRITE) {
         c->write->ready = 0;
         return NGX_AGAIN;
     }
 
+    /* 需要继续读 */
     if (sslerr == SSL_ERROR_WANT_READ) {
 
         ngx_log_error(NGX_LOG_INFO, c->log, 0,
@@ -3620,12 +3634,11 @@ ngx_openssl_engine(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return "is duplicate";
     }
 
-    oscf->engine = 1;
+    oscf->engine = 1;                               /* 使能标志位 */
 
     value = cf->args->elts;
 
-    engine = ENGINE_by_id((char *) value[1].data);
-
+    engine = ENGINE_by_id((char *) value[1].data);  /* 查找引擎 */
     if (engine == NULL) {
         ngx_ssl_error(NGX_LOG_WARN, cf->log, 0,
                       "ENGINE_by_id(\"%V\") failed", &value[1]);
