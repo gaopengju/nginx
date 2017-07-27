@@ -112,17 +112,17 @@ struct ngx_output_chain_ctx_s {
     ngx_pool_t                  *pool;
     ngx_int_t                    allocated;
     ngx_bufs_t                   bufs;
-    ngx_buf_tag_t                tag;
+    ngx_buf_tag_t                tag;           /* proxy_pass: ngx_http_proxy_module */
 
-    ngx_output_chain_filter_pt   output_filter;
-    void                        *filter_ctx;
+    ngx_output_chain_filter_pt   output_filter; /* proxy_pass: ngx_chain_writer() */
+    void                        *filter_ctx;    /* proxy_pass: =&struct ngx_http_upstream_s->writer */
 };
 
 
 typedef struct {
-    ngx_chain_t                 *out;
-    ngx_chain_t                **last;
-    ngx_connection_t            *connection;
+    ngx_chain_t                 *out;          /* */
+    ngx_chain_t                **last;         /* =&->out */
+    ngx_connection_t            *connection;   /* 和upstream的底层连接 */
     ngx_pool_t                  *pool;
     off_t                        limit;
 } ngx_chain_writer_ctx_t;

@@ -83,7 +83,7 @@ ngx_time_init(void)
     ngx_time_update();
 }
 
-
+/* 更新缓存时间 */
 void
 ngx_time_update(void)
 {

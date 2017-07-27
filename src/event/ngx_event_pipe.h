@@ -21,7 +21,7 @@ typedef ngx_int_t (*ngx_event_pipe_input_filter_pt)(ngx_event_pipe_t *p,
 typedef ngx_int_t (*ngx_event_pipe_output_filter_pt)(void *data,
                                                      ngx_chain_t *chain);
 
-
+/* 维护downstream、upstream的关联关系 */
 struct ngx_event_pipe_s {
     ngx_connection_t  *upstream;
     ngx_connection_t  *downstream;
@@ -41,8 +41,8 @@ struct ngx_event_pipe_s {
      * from the raw bufs to an incoming chain
      */
 
-    ngx_event_pipe_input_filter_pt    input_filter;
-    void                             *input_ctx;
+    ngx_event_pipe_input_filter_pt    input_filter;  /* ngx_http_proxy_copy_filter() */
+    void                             *input_ctx;     /* ngx_http_request_t */
 
     ngx_event_pipe_output_filter_pt   output_filter;
     void                             *output_ctx;

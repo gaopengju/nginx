@@ -348,7 +348,7 @@ typedef struct {
 
 
 struct ngx_http_core_loc_conf_s {
-    ngx_str_t     name;          /* location name */
+    ngx_str_t     name;            /* location配置指令值，即名称 */
 
 #if (NGX_PCRE)
     ngx_http_regex_t  *regex;
@@ -358,10 +358,10 @@ struct ngx_http_core_loc_conf_s {
     unsigned      lmt_excpt:1;
     unsigned      named:1;
 
-    unsigned      exact_match:1;
+    unsigned      exact_match:1;   /* location名为完全匹配，即location=xxx{} */
     unsigned      noregex:1;
 
-    unsigned      auto_redirect:1;
+    unsigned      auto_redirect:1; /* 0/1, location名以"/"结尾  */
 #if (NGX_HTTP_GZIP)
     unsigned      gzip_disable_msie6:2;
 #if (NGX_HTTP_DEGRADATION)
@@ -380,7 +380,7 @@ struct ngx_http_core_loc_conf_s {
     uint32_t      limit_except;
     void        **limit_except_loc_conf;
 
-    ngx_http_handler_pt  handler;
+    ngx_http_handler_pt  handler;          /* 配置了proxy_pass后, =ngx_http_proxy_handler() */
 
     /* location name length for inclusive location with inherited alias */
     size_t        alias;

@@ -26,7 +26,7 @@ nginx中的时间以秒为粒度，被缓存起来，并形成丰富的字符串
 返回错误等。
 
 超时管理需要解决两个问题，第一，超时事件对象如何组织，nginx采用红黑树；第
-儿，超时检测。
+二，超时检测。
 
 nginx采用两种方式检测超时，第一，定时检测机制，通过设定定时器，每隔一段时
 间对红黑树扫瞄一次；第二，计算最快发生的事件需要等待的时间，在系统调用函数
@@ -453,6 +453,101 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
 * TODO upstream模块儿
 此模块儿与具体的协议无关，除HTTP外，还支持包括FASTCGI、SCGI、MEMCACHED等；
 典型应用是反向代理。
+ - ngx_http_upstream_module
+   : ~/src/http/ngx_http_upstream.c
+   : 对应upstream{}配置指令
+ - ngx_http_proxy_module
+   : ~/src/http/modules/ngx_http_proxy_module.c
+   : 对应location{proxy_pass}配置，提供请求到upstream的代理通道
+ - ngx_http_upstream_ip_hash_module
+   : ~/src/http/modules/ngx_http_upstream_ip_hash_module.c
+   : 对应upstream{ip_hash;}配置，提供IP HASH类型的LB算法
+
+** 解析流程
+upstream{}配置解析
+#+BEGIN_EXAMPLE
+-main()
+  -ngx_init_cycle()
+    -ngx_conf_parse()                         配置文件解析入口，~/src/core/ngx_conf_file.c
+      -ngx_conf_read_token()                  读取关键字
+      -ngx_conf_handler()                     处理关键字
+        -ngx_conf_t->cycle->modules[i]->commands->set()
+        -->ngx_http_block()                   http{}处理入口, ~/src/http/ngx_http.c
+          -->ngx_http_core_server()             server{}处理入口，~/src/http/ngx_http_core_module.c
+          -->ngx_http_core_location()           location{}处理入口，~/src/http/ngx_http_core_module.c
+          -->ngx_http_upstream()                upstream{}处理入口，~/src/http/ngx_http_upstream.c
+            -ngx_http_upstream_server()           server处理入口，~/src/http/ngx_http_upstream.c
+            -ngx_http_upstream_ip_hash()          ip_hash处理入口，~/src/http/modules/ngx_http_upstream_ip_hash_module.c
+          -ngx_http_upstream_module->->ctx->init_main_conf()
+          -->ngx_http_upstream_init_main_conf() 初始化upstream主配置，~/src/http/ngx_http_upstream.c
+            -ngx_http_upstream_srv_conf_t->peer.init_upstream()
+            -->ngx_http_upstream_init_ip_hash()   ip_hash算法初始化
+            -装载upstream支持的http属性头 ngx_http_upstream_headers_in[]
+#+END_EXAMPLE
+
+proxy_pass配置解析
+#+BEGIN_EXAMPLE
+-ngx_http_core_location()                     location{}处理入口，~/src/http/ngx_http_core_module.c
+  -ngx_http_proxy_pass()                      proxy_pass指令，~/src/http/modules/ngx_http_proxy_module.c
+    -ngx_http_core_loc_conf_t->handler          设置处理句柄ngx_http_proxy_handler()
+    -ngx_http_upstream_add()                    查找对应的upstream
+#+END_EXAMPLE
+
+** HTTP请求处理流程
+收到客户端请求报文的处理流程
+#+BEGIN_EXAMPLE
+-ngx_http_wait_request_handler()
+  -ngx_http_process_request_headers()
+    -ngx_http_core_run_phases()
+      -ngx_http_core_find_config_phase()   NGX_HTTP_FIND_CONFIG_PHASE阶段->checker
+        -赋值ngx_http_request_t->content_handler()
+      -ngx_http_core_content_phase()       NGX_HTTP_CONTENT_PHASE阶段->checker
+        -ngx_http_proxy_handler()            proxy_pass处理入口, ~/src/http/modules/ngx_http_proxy_module.c
+#+END_EXAMPLE
+
+#+BEGIN_EXAMPLE
+-ngx_http_proxy_handler()            proxy_pass处理入口, ~/src/http/modules/ngx_http_proxy_module.c
+  -设置upstream请求处理句柄
+    -ngx_http_upstream_t->create_request = ngx_http_proxy_create_request()
+    -ngx_http_upstream_t->process_header = ngx_http_proxy_process_status_line()
+    -ngx_http_upstream_t->finalize_request = ngx_http_proxy_finalize_request()
+  -ngx_http_read_client_request_body()
+    -ngx_http_upstream_init()
+      -ngx_http_upstream_init_request()
+        -ngx_http_upstream_t->create_request()       创建请求
+        -ngx_http_upstream_srv_conf_t->peer.init()   初始化LB环境
+        -->ngx_http_upstream_init_ip_hash_peer()
+        -ngx_http_upstream_connect()                 ~/src/http/ngx_http_upstream.c
+          -ngx_event_connect_peer()                  创建连接
+          -设置处理句柄
+            -ngx_connection_t->write->handler = ngx_http_upstream_handler()
+            -ngx_connection_t->read->handler = ngx_http_upstream_handler()
+            -ngx_http_upstream_t->write_event_handler = ngx_http_upstream_send_request_handler()
+            -ngx_http_upstream_t->read_event_handler = ngx_http_upstream_process_header()
+          -ngx_http_upstream_ssl_init_connection()   SSL环境下的发送函数
+          -ngx_http_upstream_send_request()          普通环境的发送函数
+            -ngx_http_upstream_send_request_body()
+#+END_EXAMPLE
+
+收到真实服务器的回应报文的处理流程
+#+BEGIN_EXAMPLE
+-ngx_http_upstream_handler()                  ~/src/http/ngx_http_upstream.c
+  -ngx_http_upstream_t->read_event_handler()
+  -->ngx_http_upstream_process_header()
+    -ngx_connection_t->recv()                    接收
+    -ngx_http_upstream_t->process_header()
+    -->ngx_http_proxy_process_status_line()      解析应答行
+      -ngx_http_proxy_process_header()           解析HTTP属性头
+    -ngx_http_upstream_process_headers()         处理HTTP属性头
+    -ngx_http_upstream_send_response()           向客户端发送服务器应答
+      -ngx_http_send_header()
+      -ngx_http_upstream_process_non_buffered_downstream()
+      -ngx_http_upstream_finalize_request()
+  -ngx_http_run_posted_requests()             处理后续请求
+#+END_EXAMPLE
+#+BEGIN_EXAMPLE
+-ngx_http_upstream_process_header()           ~/src/http/ngx_http_upstream.c
+#+END_EXAMPLE
 
 * TODO load-balance模块儿
 可用称为辅助模块儿，主要为upstream模块儿服务，决定如何从多台后端服务器中
@@ -689,6 +784,7 @@ write event的控制，进而实现速度上限的控制。
    : 定义在~/src/http/modules/ngx_http_ssl_module.c
    : 对接用户配置指令，提供SSL服务器的能力
 
+** DownStream
 #+BEGIN_EXAMPLE
 做为SSL服务器的处理流程
 -main()                            ~/src/core/nginx.c
@@ -720,4 +816,9 @@ write event的控制，进而实现速度上限的控制。
           -ngx_http_ssl_handshake_handler() 握手完成后，设置SSL解密后的处理入口为ngx_http_wait_request_handler()
 #+END_EXAMPLE
 
+** upstream
+#+BEGIN_EXAMPLE
+做为SSL客户端的处理流程
+-main()
+#+END_EXAMPLE
 

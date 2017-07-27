@@ -122,7 +122,7 @@ ngx_module_t  ngx_http_module = {
     NGX_MODULE_V1_PADDING
 };
 
-/* NGX_MAIN_CONF标识变量的处理示例 */
+/* http{}处理函数，NGX_MAIN_CONF 标识变量的处理示例 */
 static char *
 ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -557,7 +557,7 @@ ngx_http_init_phase_handlers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
         for (j = cmcf->phases[i].handlers.nelts - 1; j >=0; j--) {
             ph->checker = checker;
             ph->handler = h[j];
-            ph->next = n;                      /* 指向下一阶段的起始索引 */
+            ph->next = n;                  /* 指向下一阶段的起始索引 */
             ph++;
         }
     }

@@ -928,7 +928,7 @@ ngx_http_core_rewrite_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
     return NGX_OK;
 }
 
-
+/* NGX_HTTP_FIND_CONFIG_PHASE阶段->checker()，查找location配置等 */
 ngx_int_t
 ngx_http_core_find_config_phase(ngx_http_request_t *r,
     ngx_http_phase_handler_t *ph)
@@ -942,14 +942,13 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
     r->uri_changed = 0;
 
     rc = ngx_http_core_find_location(r);
-
     if (rc == NGX_ERROR) {
         ngx_http_finalize_request(r, NGX_HTTP_INTERNAL_SERVER_ERROR);
         return NGX_OK;
     }
 
+    /* 查找对应的location配置 */
     clcf = ngx_http_get_module_loc_conf(r, ngx_http_core_module);
-
     if (!r->internal && clcf->internal) {
         ngx_http_finalize_request(r, NGX_HTTP_NOT_FOUND);
         return NGX_OK;
@@ -960,6 +959,7 @@ ngx_http_core_find_config_phase(ngx_http_request_t *r,
                    (clcf->noname ? "*" : (clcf->exact_match ? "=" : "")),
                    &clcf->name);
 
+    /* 根据location配置更新r字段，包括r->content_handler() */
     ngx_http_update_location_config(r);
 
     ngx_log_debug2(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
@@ -1380,11 +1380,11 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
     /* ngx_http_request_t->content_handler优先级最高, 调用后不再调用其他注
        册的句柄, 主要提供给upstream等模块儿使用
 
-       对于ngx_http_proxy_module--upstream模块儿, 为ngx_http_proxy_handler()
+       对于ngx_http_proxy_module--upstream模块儿, 为 ngx_http_proxy_handler()
        
-       对于ngx_http_lua_module--nginx lua模块儿，为ngx_http_lua_content_handler() 
+       对于ngx_http_lua_module--nginx lua模块儿，为 ngx_http_lua_content_handler() 
 
-       对于ngx_http_stub_status_module模块儿，为ngx_http_stub_status_handler() */
+       对于ngx_http_stub_status_module模块儿，为 ngx_http_stub_status_handler() */
     if (r->content_handler) {
         r->write_event_handler = ngx_http_request_empty_handler;
         ngx_http_finalize_request(r, r->content_handler(r));
@@ -1508,7 +1508,7 @@ ngx_http_update_location_config(ngx_http_request_t *r)
 
     if (clcf->handler) {                   /* 本地特定处理，如ngx_http_stub_status_module模块儿的
                                                   处理函数ngx_http_stub_status_handler()*/
-        r->content_handler = clcf->handler;
+        r->content_handler = clcf->handler;/*   proxy_pass: ngx_http_proxy_handler() */
     }
 }
 

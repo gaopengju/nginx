@@ -118,6 +118,7 @@ struct ngx_event_s {
                                                  ngx_http_empty_handler()
                                             接收到报文请求头后, 读/写事件为
                                                  ngx_http_process_request_line()
+                                            proxy_pass读写均为: ngx_http_upstream_handler()
                                           */
 #if (NGX_HAVE_IOCP)
     ngx_event_ovlp_t ovlp;

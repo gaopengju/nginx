@@ -96,7 +96,7 @@ ngx_conf_param(ngx_conf_t *cf)
     return rv;
 }
 
-
+/* 解析配置文件 */
 char *
 ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 {
@@ -466,7 +466,8 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
                 }
             }
 
-            /* 设置配置结构对应的值 */
+            /* 调用模块儿的配置指令，设置配置结构对应的值； 
+               如http{}的解析函数为 ngx_http_block() */
             rv = cmd->set(cf, cmd, conf);
 
             if (rv == NGX_CONF_OK) {

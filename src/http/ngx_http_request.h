@@ -284,16 +284,16 @@ typedef void (*ngx_http_client_body_handler_pt)(ngx_http_request_t *r);
 
 typedef struct {
     ngx_temp_file_t                  *temp_file;
-    ngx_chain_t                      *bufs;
-    ngx_buf_t                        *buf;
-    off_t                             rest;
+    ngx_chain_t                      *bufs;          /* 维护发往upstream的内存 */
+    ngx_buf_t                        *buf;           /* 用于接收报文体的内存 */
+    off_t                             rest;          /* 请求体待处理的长度 */
 #if (NGX_HTTP_V2)
     off_t                             received;
 #endif
-    ngx_chain_t                      *free;
-    ngx_chain_t                      *busy;
-    ngx_http_chunked_t               *chunked;
-    ngx_http_client_body_handler_pt   post_handler;
+    ngx_chain_t                      *free;          /* 空闲内存 */
+    ngx_chain_t                      *busy;          /* 过滤处理后的内存描述链 */
+    ngx_http_chunked_t               *chunked;       /* */
+    ngx_http_client_body_handler_pt   post_handler;  /* proxy_pass: ngx_http_upstream_init() */
 } ngx_http_request_body_t;
 
 
@@ -370,8 +370,8 @@ struct ngx_http_request_s {
     ngx_connection_t                 *connection;        /* 指向当前的请求连接 */
 
     void                            **ctx;               /* 对应各个模块儿的执行环境，
-                                                            如ngx_http_lua_module的
-                                                            ngx_http_lua_ctx_t */
+                                                              ngx_http_lua_module: ngx_http_lua_ctx_t 
+                                                              ngx_http_proxy_module: ngx_http_proxy_ctx_t */
     void                            **main_conf;         /* 默认虚拟服务器的配置信息 */
     void                            **srv_conf;
     void                            **loc_conf;
@@ -383,9 +383,8 @@ struct ngx_http_request_s {
     ngx_http_cache_t                 *cache;
 #endif
 
-    ngx_http_upstream_t              *upstream;
-    ngx_array_t                      *upstream_states;
-                                         /* of ngx_http_upstream_state_t */
+    ngx_http_upstream_t              *upstream;        /* 维护upstream信息 */
+    ngx_array_t                      *upstream_states; /* 统计信息, ngx_http_upstream_state_t */
 
     ngx_pool_t                       *pool;
     ngx_buf_t                        *header_in;       /* 当前处理的头部缓存位置，
@@ -399,8 +398,7 @@ struct ngx_http_request_s {
                                                             减少内存拷贝, 多了的这层结构就是为了组织
                                                             更多的信息而已)*/
 
-    ngx_http_request_body_t          *request_body;    /* 用于upstream时, 用于描述发送到后端服务器
-                                                          的信息; ->post_handler=ngx_http_upstream_init */
+    ngx_http_request_body_t          *request_body;    /* 维护请求体的信息结构 */
 
     time_t                            lingering_time;
     time_t                            start_sec;
@@ -426,7 +424,7 @@ struct ngx_http_request_s {
     ngx_http_posted_request_t        *posted_requests;
 
     ngx_int_t                         phase_handler;  /* 当前对应的处理phase索引 */
-    ngx_http_handler_pt               content_handler;
+    ngx_http_handler_pt               content_handler;/* =ngx_http_core_loc_conf_t->handler */
     ngx_uint_t                        access_code;
 
     ngx_http_variable_value_t        *variables;      /* 本次请求对应的变量值数组，
@@ -444,7 +442,7 @@ struct ngx_http_request_s {
     /* used to learn the Apache compatible response length without a header */
     size_t                            header_size;
 
-    off_t                             request_length;  /* */
+    off_t                             request_length;  /* 已处理的请求长度 */
 
     ngx_uint_t                        err_status;
 
@@ -507,7 +505,7 @@ struct ngx_http_request_s {
     unsigned                          request_body_in_clean_file:1;
     unsigned                          request_body_file_group_access:1;
     unsigned                          request_body_file_log_level:3;
-    unsigned                          request_body_no_buffering:1;
+    unsigned                          request_body_no_buffering:1;        /**/
 
     unsigned                          subrequest_in_memory:1;
     unsigned                          waited:1;
@@ -544,7 +542,7 @@ struct ngx_http_request_s {
     unsigned                          keepalive:1;          /* 是否支持长链接? */
     unsigned                          lingering_close:1;
     unsigned                          discard_body:1;
-    unsigned                          reading_body:1;
+    unsigned                          reading_body:1;       /* 请求体尚未读取完毕 */
     unsigned                          internal:1;
     unsigned                          error_page:1;
     unsigned                          filter_finalize:1;
@@ -575,7 +573,7 @@ struct ngx_http_request_s {
     /* used to parse HTTP headers */
 
     ngx_uint_t                        state;         /* 解析http头时的状态机, 
-                                                        内置在函数ngx_http_parse_request_line()中 */
+                                                        内置在函数 ngx_http_parse_request_line() 中 */
 
     ngx_uint_t                        header_hash;   /* 请求头部某个字段的hash值 */
     ngx_uint_t                        lowcase_index; /* 头部的值 */

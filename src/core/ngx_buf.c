@@ -186,17 +186,17 @@ ngx_chain_update_chains(ngx_pool_t *p, ngx_chain_t **free, ngx_chain_t **busy,
 {
     ngx_chain_t  *cl;
 
+    /* 输出报文加入 ->busy 链 */
     if (*busy == NULL) {
         *busy = *out;
-
     } else {
         for (cl = *busy; cl->next; cl = cl->next) { /* void */ }
 
         cl->next = *out;
     }
-
     *out = NULL;
 
+    /* 遍历->busy链，释放空闲内存 */
     while (*busy) {
         cl = *busy;
 

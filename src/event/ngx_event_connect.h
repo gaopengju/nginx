@@ -35,14 +35,14 @@ typedef void (*ngx_event_save_peer_session_pt)(ngx_peer_connection_t *pc,
 
 
 struct ngx_peer_connection_s {
-    ngx_connection_t                *connection;
+    ngx_connection_t                *connection;    /* 对应的链接结构 */
 
     struct sockaddr                 *sockaddr;
     socklen_t                        socklen;
     ngx_str_t                       *name;
 
     ngx_uint_t                       tries;
-    ngx_msec_t                       start_time;
+    ngx_msec_t                       start_time;    /* 连接时间 */
 
     ngx_event_get_peer_pt            get;
     ngx_event_free_peer_pt           free;
@@ -55,7 +55,7 @@ struct ngx_peer_connection_s {
 
     ngx_addr_t                      *local;
 
-    int                              type;
+    int                              type;          /* 连接类型，SOCK_STREAM */
     int                              rcvbuf;
 
     ngx_log_t                       *log;

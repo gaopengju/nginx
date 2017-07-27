@@ -5,7 +5,7 @@
  * Copyright (C) Nginx, Inc.
  */
 
-/*
+#if 0
   以下代码由./configure生成，~/objs/ngx_modules.c，为摘录方便，copy到此
   ngx_module_t *ngx_modules[] = {
     &ngx_core_module,                       类型NGX_CORE_MODULE
@@ -130,7 +130,7 @@
     "ngx_http_not_modified_filter_module",
     NULL
   };
-*/
+#endif
 
 #include <ngx_config.h>
 #include <ngx_core.h>

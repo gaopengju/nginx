@@ -36,8 +36,8 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         return rc;
     }
 
+    /* socket(), 建立插口  */
     type = (pc->type ? pc->type : SOCK_STREAM);
-
     s = ngx_socket(pc->sockaddr->sa_family, type, 0);
 
     ngx_log_debug2(NGX_LOG_DEBUG_EVENT, pc->log, 0, "%s socket %d",
@@ -49,9 +49,8 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         return NGX_ERROR;
     }
 
-
+    /* 分配链接结构 */
     c = ngx_get_connection(s, pc->log);
-
     if (c == NULL) {
         if (ngx_close_socket(s) == -1) {
             ngx_log_error(NGX_LOG_ALERT, pc->log, ngx_socket_errno,
@@ -60,9 +59,9 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
 
         return NGX_ERROR;
     }
-
     c->type = type;
 
+    /* 设定接收缓存 */
     if (pc->rcvbuf) {
         if (setsockopt(s, SOL_SOCKET, SO_RCVBUF,
                        (const void *) &pc->rcvbuf, sizeof(int)) == -1)
@@ -73,6 +72,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         }
     }
 
+    /* 设置非阻塞 */
     if (ngx_nonblocking(s) == -1) {
         ngx_log_error(NGX_LOG_ALERT, pc->log, ngx_socket_errno,
                       ngx_nonblocking_n " failed");
@@ -80,6 +80,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         goto failed;
     }
 
+    /* 绑定本端地址 */
     if (pc->local) {
 
 #if (NGX_HAVE_TRANSPARENT_PROXY)
@@ -145,6 +146,7 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         }
     }
 
+    /* 设定收发函数 */
     if (type == SOCK_STREAM) {
         c->recv = ngx_recv;
         c->send = ngx_send;
@@ -176,10 +178,12 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     rev->log = pc->log;
     wev->log = pc->log;
 
+    /* 关联此链接结构 */
     pc->connection = c;
 
     c->number = ngx_atomic_fetch_add(ngx_connection_counter, 1);
 
+    /* 监控链接，添加到epoll模型 */
     if (ngx_add_conn) {
         if (ngx_add_conn(c) == NGX_ERROR) {
             goto failed;
@@ -189,8 +193,8 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, pc->log, 0,
                    "connect to %V, fd:%d #%uA", pc->name, s, c->number);
 
+    /* connect(), 链接服务器 */
     rc = connect(s, pc->sockaddr, pc->socklen);
-
     if (rc == -1) {
         err = ngx_socket_errno;
 
@@ -232,8 +236,9 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
         }
     }
 
+    /* 根据连接到服务器状况，设置返回值 */
     if (ngx_add_conn) {
-        if (rc == -1) {
+        if (rc == -1) {     /* 正在连接 */
 
             /* NGX_EINPROGRESS */
 
@@ -242,11 +247,12 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
 
         ngx_log_debug0(NGX_LOG_DEBUG_EVENT, pc->log, 0, "connected");
 
-        wev->ready = 1;
+        wev->ready = 1;     /* 已连接，可写 */
 
         return NGX_OK;
     }
 
+    /*** 后续为非阻塞 ***/
     if (ngx_event_flags & NGX_USE_IOCP_EVENT) {
 
         ngx_log_debug1(NGX_LOG_DEBUG_EVENT, pc->log, ngx_socket_errno,
