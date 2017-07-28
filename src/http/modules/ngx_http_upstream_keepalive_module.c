@@ -9,7 +9,7 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-/* upstream{}配置解析结果 */
+/* upstream{keepalive}配置解析结果 */
 typedef struct {
     ngx_uint_t                         max_cached;   /* upstream连接最大缓存数，对应upstream{keepalive} */
 
@@ -318,6 +318,7 @@ ngx_http_upstream_free_keepalive_peer(ngx_peer_connection_t *pc, void *data,
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, pc->log, 0,
                    "free keepalive peer: saving connection %p", c);
 
+    /* 插入缓存，->free非空，则提取其表项初始化后插入->cache；否则替换->cache链的尾 */
     if (ngx_queue_empty(&kp->conf->free)) {
 
         q = ngx_queue_last(&kp->conf->cache);
@@ -334,13 +335,13 @@ ngx_http_upstream_free_keepalive_peer(ngx_peer_connection_t *pc, void *data,
         item = ngx_queue_data(q, ngx_http_upstream_keepalive_cache_t, queue);
     }
 
-    ngx_queue_insert_head(&kp->conf->cache, q);
+    ngx_queue_insert_head(&kp->conf->cache, q);    /* 插入 */
 
-    item->connection = c;
+    item->connection = c;                          /* 关联链路 */
 
     pc->connection = NULL;
 
-    if (c->read->timer_set) {
+    if (c->read->timer_set) {                      /* 删除读、写超时定时器 */
         ngx_del_timer(c->read);
     }
     if (c->write->timer_set) {
@@ -349,7 +350,7 @@ ngx_http_upstream_free_keepalive_peer(ngx_peer_connection_t *pc, void *data,
 
     c->write->handler = ngx_http_upstream_keepalive_dummy_handler;
     c->read->handler = ngx_http_upstream_keepalive_close_handler;
-
+                                                   /* 设置占位操控函数 */
     c->data = item;
     c->idle = 1;
     c->log = ngx_cycle->log;
@@ -357,7 +358,7 @@ ngx_http_upstream_free_keepalive_peer(ngx_peer_connection_t *pc, void *data,
     c->write->log = ngx_cycle->log;
     c->pool->log = ngx_cycle->log;
 
-    item->socklen = pc->socklen;
+    item->socklen = pc->socklen;                   /* 存储服务器信息，以便于后续查找比对 */
     ngx_memcpy(&item->sockaddr, pc->sockaddr, pc->socklen);
 
     if (c->read->ready) {
@@ -365,7 +366,7 @@ ngx_http_upstream_free_keepalive_peer(ngx_peer_connection_t *pc, void *data,
     }
 
 invalid:
-
+    /* 原LB算法的释放流程 */
     kp->original_free_peer(pc, kp->data, state);
 }
 
@@ -519,6 +520,7 @@ ngx_http_upstream_keepalive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     kcf->max_cached = n;            /* 赋值 */
 
     /* 保存upstream原对端初始化函数；并利用新函数替换 */
+    /* <TAKECARE!!!>注意此处对模块儿初始化顺序有要求 */
     uscf = ngx_http_conf_get_module_srv_conf(cf, ngx_http_upstream_module);
     kcf->original_init_upstream = uscf->peer.init_upstream
                                   ? uscf->peer.init_upstream

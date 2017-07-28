@@ -398,6 +398,8 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
   - load-balance   :: 配合upstream，实现后端真实服务器的负载均衡
   - stream         :: 实现四层反向代理
 
+** 模块儿初始化顺序
+
 * handle phase
   - 阶段名              :: 11阶段， =ngx_http_phases:~/src/http/ngx_http_core_module.h=
   - 注册                :: =各模块儿ngx_module_t->ctx->postconfiguration()=
@@ -573,6 +575,29 @@ proxy_pass配置解析
 #+END_EXAMPLE
 
 ** upstream链路缓存
+利用模块儿初始化顺序，替换原LB层操控指针，以在其上加入cache层，以保证主
+流程代码不变。
+#+BEGIN_EXAMPLE
+-ngx_http_upstream_keepalive()            upstream{keepalive}配置指令解析函数，~/src/http/modules/ngx_http_upstream_keepalive_module.c
+  -保存并替换LB环境初始化函数             ngx_http_upstream_srv_conf_t->peer.init_upstream = ngx_http_upstream_init_keepalive()
+
+-ngx_http_upstream_init_keepalive()
+  -保存并替换LB数据初始化函数             ngx_http_upstream_srv_conf_t->peer.init = ngx_http_upstream_init_keepalive_peer()
+
+-ngx_http_upstream_init_keepalive_peer()
+  -保存并替换服务器选择/释放函数          ngx_http_request_t->upstream->peer.get = ngx_http_upstream_get_keepalive_peer()
+                                          ngx_http_request_t->upstream->peer.free = ngx_http_upstream_free_keepalive_peer()
+
+-ngx_http_upstream_get_keepalive_peer()   获取upstream服务器连接
+  -原LB查找算法，查找后端主机
+  -搜索cache，查看是否有此主机的链接
+  -有则利用
+  -无则返回重新建立链接
+
+-ngx_http_upstream_free_keepalive_peer()  释放upstream服务器连接
+  -存储到缓存(超过设定数则替换)
+  -调用原LB释放算法
+#+END_EXAMPLE
 
 * 四层代理
  - ngx_stream_module
