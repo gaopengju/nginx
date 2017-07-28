@@ -2292,7 +2292,7 @@ ngx_http_post_request(ngx_http_request_t *r, ngx_http_posted_request_t *pr)
     return NGX_OK;
 }
 
-
+/* 关闭请求 */
 void
 ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
 {
@@ -2306,6 +2306,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
                    "http finalize request: %i, \"%V?%V\" a:%d, c:%d",
                    rc, &r->uri, &r->args, r == c->data, r->main->count);
 
+    /* 请求完成，关闭连接 */
     if (rc == NGX_DONE) {
         ngx_http_finalize_connection(r);
         return;
@@ -2315,6 +2316,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         c->error = 1;
     }
 
+    /* 继续当前阶段其他句柄处理 */
     if (rc == NGX_DECLINED) {
         r->content_handler = NULL;
         r->write_event_handler = ngx_http_core_run_phases;
@@ -2322,10 +2324,12 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         return;
     }
 
+    /* 子请求 */
     if (r != r->main && r->post_subrequest) {
         rc = r->post_subrequest->handler(r, r->post_subrequest->data, rc);
     }
 
+    /* 发生致命错误 */
     if (rc == NGX_ERROR
         || rc == NGX_HTTP_REQUEST_TIME_OUT
         || rc == NGX_HTTP_CLIENT_CLOSED_REQUEST
@@ -2343,6 +2347,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         return;
     }
 
+    /* 服务器状态码>=300 */
     if (rc >= NGX_HTTP_SPECIAL_RESPONSE
         || rc == NGX_HTTP_CREATED
         || rc == NGX_HTTP_NO_CONTENT)
@@ -2369,6 +2374,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         return;
     }
 
+    /* 子请求 */
     if (r != r->main) {
 
         if (r->buffered || r->postponed) {
@@ -2477,6 +2483,7 @@ ngx_http_finalize_request(ngx_http_request_t *r, ngx_int_t rc)
         return;
     }
 
+    /* 释放连接 */
     ngx_http_finalize_connection(r);
 }
 
@@ -2576,6 +2583,7 @@ ngx_http_finalize_connection(ngx_http_request_t *r)
         r->lingering_close = 1;
     }
 
+    /* 长连接处理 */
     if (!ngx_terminate
          && !ngx_exiting
          && r->keepalive
@@ -2595,6 +2603,7 @@ ngx_http_finalize_connection(ngx_http_request_t *r)
         return;
     }
 
+    /* 正常关闭请求 */
     ngx_http_close_request(r, 0);
 }
 
@@ -2863,7 +2872,7 @@ closed:
     ngx_http_finalize_request(r, NGX_HTTP_CLIENT_CLOSED_REQUEST);
 }
 
-
+/* 请求为长连接，关闭长连接 */
 static void
 ngx_http_set_keepalive(ngx_http_request_t *r)
 {
@@ -2936,6 +2945,7 @@ ngx_http_set_keepalive(ngx_http_request_t *r)
     /* guard against recursive call from ngx_http_finalize_connection() */
     r->keepalive = 0;
 
+    /* 释放请求信息结构 */
     ngx_http_free_request(r, 0);
 
     c->data = hc;
@@ -3029,6 +3039,7 @@ ngx_http_set_keepalive(ngx_http_request_t *r)
     }
 #endif
 
+    /* 设置处理句柄 */
     rev->handler = ngx_http_keepalive_handler;
 
     if (wev->active && (ngx_event_flags & NGX_USE_LEVEL_EVENT)) {
@@ -3085,17 +3096,17 @@ ngx_http_set_keepalive(ngx_http_request_t *r)
     r->http_state = NGX_HTTP_KEEPALIVE_STATE;
 #endif
 
+    /* 插入可重用队列，并设定定时器 */
     c->idle = 1;
     ngx_reusable_connection(c, 1);
 
     ngx_add_timer(rev, clcf->keepalive_timeout);
-
     if (rev->ready) {
         ngx_post_event(rev, &ngx_posted_events);
     }
 }
 
-
+/* keepalive状态的读函数 */
 static void
 ngx_http_keepalive_handler(ngx_event_t *rev)
 {
@@ -3108,13 +3119,13 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
 
     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, c->log, 0, "http keepalive handler");
 
+    /* 超时或链路关闭 */
     if (rev->timedout || c->close) {
         ngx_http_close_connection(c);
         return;
     }
 
 #if (NGX_HAVE_KQUEUE)
-
     if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {
         if (rev->pending_eof) {
             c->log->handler = NULL;
@@ -3133,9 +3144,9 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
 
 #endif
 
+    /* 分配缓存 */
     b = c->buffer;
     size = b->end - b->start;
-
     if (b->pos == NULL) {
 
         /*
@@ -3159,13 +3170,12 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
      * MSIE closes a keepalive connection with RST flag
      * so we ignore ECONNRESET here.
      */
-
     c->log_error = NGX_ERROR_IGNORE_ECONNRESET;
     ngx_set_socket_errno(0);
 
+    /* 读取数据 */
     n = c->recv(c, b->last, size);
     c->log_error = NGX_ERROR_INFO;
-
     if (n == NGX_AGAIN) {
         if (ngx_handle_read_event(rev, 0) != NGX_OK) {
             ngx_http_close_connection(c);
@@ -3175,8 +3185,7 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
         /*
          * Like ngx_http_set_keepalive() we are trying to not hold
          * c->buffer's memory for a keepalive connection.
-         */
-
+         *//* 不保留缓存 */
         if (ngx_pfree(c->pool, b->start) == NGX_OK) {
 
             /*
@@ -3189,13 +3198,14 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
         return;
     }
 
+    /* 读错误 */
     if (n == NGX_ERROR) {
         ngx_http_close_connection(c);
         return;
     }
 
+    /* 读到的数据长度为0, 即无数据，意味着对端强制关闭连接 */
     c->log->handler = NULL;
-
     if (n == 0) {
         ngx_log_error(NGX_LOG_INFO, c->log, ngx_socket_errno,
                       "client %V closed keepalive connection", &c->addr_text);
@@ -3203,14 +3213,17 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
         return;
     }
 
+    /* 更新缓存变量 */
     b->last += n;
 
     c->log->handler = ngx_http_log_error;
     c->log->action = "reading client request line";
 
+    /* 已经有新的请求，取消可重用标识 */
     c->idle = 0;
     ngx_reusable_connection(c, 0);
 
+    /* 创建HTTP请求 */
     c->data = ngx_http_create_request(c);
     if (c->data == NULL) {
         ngx_http_close_connection(c);
@@ -3220,8 +3233,10 @@ ngx_http_keepalive_handler(ngx_event_t *rev)
     c->sent = 0;
     c->destroyed = 0;
 
+    /* 删除超时定时器 */
     ngx_del_timer(rev);
 
+    /* 处理HTTP请求 */
     rev->handler = ngx_http_process_request_line;
     ngx_http_process_request_line(rev);
 }
@@ -3445,8 +3460,8 @@ ngx_http_close_request(ngx_http_request_t *r, ngx_int_t rc)
     }
 #endif
 
-    ngx_http_free_request(r, rc);
-    ngx_http_close_connection(c);
+    ngx_http_free_request(r, rc);   /* 释放请求 */
+    ngx_http_close_connection(c);   /* 关闭连接 */
 }
 
 
@@ -3524,7 +3539,7 @@ ngx_http_free_request(ngx_http_request_t *r, ngx_int_t rc)
 
     r->request_line.len = 0;
 
-    r->connection->destroyed = 1;
+    r->connection->destroyed = 1;     /* 对应的连接可以销毁了 */
 
     /*
      * Setting r->pool to NULL will increase probability to catch double close

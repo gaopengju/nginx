@@ -851,7 +851,8 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
     ph = cmcf->phase_engine.handlers;
 
     while (ph[r->phase_handler].checker) {
-
+        /* NGX_HTTP_FIND_CONFIG_PHASE: ngx_http_core_find_config_phase()
+           NGX_HTTP_CONTENT_PHASE: ngx_http_core_content_phase() */
         rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
         /* NGX_OK: 当前阶段处理OK，进入下一阶段
            NGX_DECLINED: 当前回调不处理此情况，进入同阶段下一个回调
@@ -1381,9 +1382,7 @@ ngx_http_core_content_phase(ngx_http_request_t *r,
        册的句柄, 主要提供给upstream等模块儿使用
 
        对于ngx_http_proxy_module--upstream模块儿, 为 ngx_http_proxy_handler()
-       
        对于ngx_http_lua_module--nginx lua模块儿，为 ngx_http_lua_content_handler() 
-
        对于ngx_http_stub_status_module模块儿，为 ngx_http_stub_status_handler() */
     if (r->content_handler) {
         r->write_event_handler = ngx_http_request_empty_handler;

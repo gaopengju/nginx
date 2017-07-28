@@ -92,14 +92,21 @@ typedef struct {
 
 #if (NGX_HTTP_SSL)
     ngx_uint_t                     ssl;                /* 0/1, 协议是否为https */
-    ngx_uint_t                     ssl_protocols;
-    ngx_str_t                      ssl_ciphers;
-    ngx_uint_t                     ssl_verify_depth;
-    ngx_str_t                      ssl_trusted_certificate;
-    ngx_str_t                      ssl_crl;
-    ngx_str_t                      ssl_certificate;
-    ngx_str_t                      ssl_certificate_key;
-    ngx_array_t                   *ssl_passwords;
+    ngx_uint_t                     ssl_protocols;      /* 配置指令"proxy_ssl_protocols TLSv1 TLSv1.1 TLSv1.2;"
+                                                          ngx_http_proxy_ssl_protocols[] */
+    ngx_str_t                      ssl_ciphers;        /* 配置指令"proxy_ssl_ciphers ciphers;"
+                                                          指定特定的加密套件 */
+    ngx_uint_t                     ssl_verify_depth;   /* "proxy_ssl_verify_depth number;" 
+                                                          认证服务器证书时的认证深度 */
+    ngx_str_t                      ssl_trusted_certificate; /* "proxy_ssl_trusted_certificate file;" 
+                                                          信任的CA证书，用于认证服务器 */
+    ngx_str_t                      ssl_crl;            /* "proxy_ssl_crl file;" */
+    ngx_str_t                      ssl_certificate;    /* "proxy_ssl_certificate file;"
+                                                          用于被服务器认证的证书 */
+    ngx_str_t                      ssl_certificate_key;/* "proxy_ssl_certificate_key file;"
+                                                          用于被服务器认证的私钥 */
+    ngx_array_t                   *ssl_passwords;      /* "proxy_ssl_password_file file;"
+                                                          加载私钥过程中，用于解密落盘文件 */
 #endif
 } ngx_http_proxy_loc_conf_t;
 

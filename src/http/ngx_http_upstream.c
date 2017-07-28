@@ -4122,7 +4122,7 @@ ngx_http_upstream_finalize_request(ngx_http_request_t *r,
         u->peer.sockaddr = NULL;
     }
 
-    /* 关闭连接 */
+    /* 关闭底层连接 */
     if (u->peer.connection) {
 
 #if (NGX_HTTP_SSL)

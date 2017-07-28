@@ -58,6 +58,18 @@
     &ngx_http_copy_filter_module,
     &ngx_http_range_body_filter_module,
     &ngx_http_not_modified_filter_module,
+    &ngx_stream_module,                     四层代理模块儿
+    &ngx_stream_access_module,
+    &ngx_stream_core_module,
+    &ngx_stream_limit_conn_module,
+    &ngx_stream_map_module,
+    &ngx_stream_return_module,
+    &ngx_stream_ssl_module,
+    &ngx_stream_proxy_module,
+    &ngx_stream_upstream_module,
+    &ngx_stream_upstream_hash_module,
+    &ngx_stream_upstream_least_conn_module,
+    &ngx_stream_upstream_zone_module,
     NULL
   };
   char *ngx_module_names[] = {

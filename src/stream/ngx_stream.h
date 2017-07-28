@@ -131,7 +131,7 @@ typedef void (*ngx_stream_handler_pt)(ngx_stream_session_t *s);
 
 
 typedef struct {
-    ngx_stream_handler_pt          handler;
+    ngx_stream_handler_pt          handler;         /* ngx_stream_proxy_handler() */
 
     ngx_stream_conf_ctx_t         *ctx;
 
@@ -182,7 +182,7 @@ typedef struct {
 } ngx_stream_module_t;
 
 
-#define NGX_STREAM_MODULE       0x4d525453     /* "STRM" */
+#define NGX_STREAM_MODULE       0x4d525453     /* 新添加的四层代理模块儿，"STRM" */
 
 #define NGX_STREAM_MAIN_CONF    0x02000000
 #define NGX_STREAM_SRV_CONF     0x04000000

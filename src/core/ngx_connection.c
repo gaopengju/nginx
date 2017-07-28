@@ -1217,8 +1217,8 @@ ngx_reusable_connection(ngx_connection_t *c, ngx_uint_t reusable)
 #endif
     }
 
+    /* 插入可重用队列 */
     c->reusable = reusable;
-
     if (reusable) {
         /* need cast as ngx_cycle is volatile */
 

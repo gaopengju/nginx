@@ -9,28 +9,30 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-
+/* upstream{}配置解析结果 */
 typedef struct {
-    ngx_uint_t                         max_cached;
+    ngx_uint_t                         max_cached;   /* upstream连接最大缓存数，对应upstream{keepalive} */
 
-    ngx_queue_t                        cache;
-    ngx_queue_t                        free;
+    ngx_queue_t                        cache;        /* 缓存链, ngx_http_upstream_keepalive_cache_t */
+    ngx_queue_t                        free;         /* 空闲链 */
 
     ngx_http_upstream_init_pt          original_init_upstream;
+                                                     /* 保存原upstream初始化函数,
+                                                        ngx_http_upstream_srv_conf_t->peer.init_upstream */
     ngx_http_upstream_init_peer_pt     original_init_peer;
-
+                                                     /* 保存原upstream数据初始化函数,
+                                                        ngx_http_upstream_srv_conf_t->peer.init */
 } ngx_http_upstream_keepalive_srv_conf_t;
 
-
+/* upstream{keepalive}对应的缓存数据结构 */
 typedef struct {
-    ngx_http_upstream_keepalive_srv_conf_t  *conf;
+    ngx_http_upstream_keepalive_srv_conf_t  *conf;    /* upstream{}配置 */
 
     ngx_queue_t                        queue;
     ngx_connection_t                  *connection;
 
     socklen_t                          socklen;
     ngx_sockaddr_t                     sockaddr;
-
 } ngx_http_upstream_keepalive_cache_t;
 
 
@@ -118,7 +120,7 @@ ngx_module_t  ngx_http_upstream_keepalive_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* upstream{keepalive}下的初始化函数 */
 static ngx_int_t
 ngx_http_upstream_init_keepalive(ngx_conf_t *cf,
     ngx_http_upstream_srv_conf_t *us)
@@ -132,17 +134,16 @@ ngx_http_upstream_init_keepalive(ngx_conf_t *cf,
 
     kcf = ngx_http_conf_upstream_srv_conf(us,
                                           ngx_http_upstream_keepalive_module);
-
+    /* 初始化LB环境 */
     if (kcf->original_init_upstream(cf, us) != NGX_OK) {
         return NGX_ERROR;
     }
 
+    /* 保存选择服务器的函数，并采用新值取代 */
     kcf->original_init_peer = us->peer.init;
-
     us->peer.init = ngx_http_upstream_init_keepalive_peer;
 
-    /* allocate cache items and add to free queue */
-
+    /* 分配缓存，并初始化，allocate cache items and add to free queue */
     cached = ngx_pcalloc(cf->pool,
                 sizeof(ngx_http_upstream_keepalive_cache_t) * kcf->max_cached);
     if (cached == NULL) {
@@ -154,7 +155,7 @@ ngx_http_upstream_init_keepalive(ngx_conf_t *cf,
 
     for (i = 0; i < kcf->max_cached; i++) {
         ngx_queue_insert_head(&kcf->free, &cached[i].queue);
-        cached[i].conf = kcf;
+        cached[i].conf = kcf;      /* 回指对应的upstream{}配置 */
     }
 
     return NGX_OK;
@@ -488,7 +489,7 @@ ngx_http_upstream_keepalive_create_conf(ngx_conf_t *cf)
     return conf;
 }
 
-
+/* upstream{keepalive}处理函数 */
 static char *
 ngx_http_upstream_keepalive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -515,10 +516,10 @@ ngx_http_upstream_keepalive(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
-    kcf->max_cached = n;
+    kcf->max_cached = n;            /* 赋值 */
 
+    /* 保存upstream原对端初始化函数；并利用新函数替换 */
     uscf = ngx_http_conf_get_module_srv_conf(cf, ngx_http_upstream_module);
-
     kcf->original_init_upstream = uscf->peer.init_upstream
                                   ? uscf->peer.init_upstream
                                   : ngx_http_upstream_init_round_robin;

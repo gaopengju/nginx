@@ -60,7 +60,7 @@ struct ngx_peer_connection_s {
 
     ngx_log_t                       *log;
 
-    unsigned                         cached:1;
+    unsigned                         cached:1;      /**/
 #if (NGX_HAVE_TRANSPARENT_PROXY)
     unsigned                         transparent:1;
 #endif

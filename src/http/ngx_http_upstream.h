@@ -84,8 +84,12 @@ typedef ngx_int_t (*ngx_http_upstream_init_peer_pt)(ngx_http_request_t *r,
 
 /* 承载upstream{ip_hash;}等配置信息，构建LB负载 */
 typedef struct {
-    ngx_http_upstream_init_pt        init_upstream;  /* ip_hash: ngx_http_upstream_init_ip_hash() */
-    ngx_http_upstream_init_peer_pt   init;           /* ip_hash: ngx_http_upstream_init_ip_hash_peer() */
+    ngx_http_upstream_init_pt        init_upstream;  /* ip_hash: ngx_http_upstream_init_ip_hash()
+                                                        upstream{keepalive}: ngx_http_upstream_init_keepalive()
+                                                      */
+    ngx_http_upstream_init_peer_pt   init;           /* ip_hash: ngx_http_upstream_init_ip_hash_peer()
+                                                        upstream{keepalive}: ngx_http_upstream_init_keepalive_peer()
+                                                      */
     void                            *data;
 } ngx_http_upstream_peer_t;
 
@@ -218,11 +222,15 @@ typedef struct {
 
 #if (NGX_HTTP_SSL)
     ngx_ssl_t                       *ssl;
-    ngx_flag_t                       ssl_session_reuse;
+    ngx_flag_t                       ssl_session_reuse; /* 配置指令"proxy_ssl_session_reuse on | off;"
+                                                           0/1, SSL会话恢复 */
 
-    ngx_http_complex_value_t        *ssl_name;
-    ngx_flag_t                       ssl_server_name;
-    ngx_flag_t                       ssl_verify;
+    ngx_http_complex_value_t        *ssl_name;          /* 配置指令“proxy_ssl_name host from proxy_pass;”
+                                                           用于验证服务器端证书的服务器名 */
+    ngx_flag_t                       ssl_server_name;   /* “proxy_ssl_server_name on | off;” 
+                                                           建立连接时，是否通过拓展属性传递服务器名 */
+    ngx_flag_t                       ssl_verify;        /* "proxy_ssl_verify on | off;"
+                                                           是否验证upstream服务器证书 */
 #endif
 
     ngx_str_t                        module;    /* ="proxy" */

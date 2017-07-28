@@ -56,7 +56,7 @@ struct ngx_cycle_s {
     ngx_uint_t                modules_n;      /* 内置模块儿数，=ngx_modules_n */
     ngx_uint_t                modules_used;    /* unsigned  modules_used:1; */
 
-    ngx_queue_t               reusable_connections_queue;
+    ngx_queue_t               reusable_connections_queue;  /* 实现链路的keepalive */
                                               /* 可重用队列, 当ngx_connection_t->reusable
                                                  =1, 则加入此队列; 当进程资源紧张, 没
                                                  有空闲连接可用时, 此队列中的连接将被释放,

@@ -359,22 +359,44 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
   - HTTP请求处理入口     :: =ngx_http_process_request()=
   - phase handler入口    :: =ngx_http_core_run_phases()=
   - 当前处理完毕后，触发子请求   :: =ngx_http_run_posted_requests()=
+  - 处理完毕后清理入口   :: =ngx_http_finalize_request()=
+
+** 结束请求
+#+BEGIN_EXAMPLE
+-ngx_http_finalize_request()                 ~/src/http/ngx_http_request.c
+  -ngx_http_finalize_connection()
+    -ngx_http_close_request()
+      -ngx_http_free_request()               释放请求相关内存
+      -ngx_http_close_connection()
+        -ngx_close_connection()              关闭底层连接
+#+END_EXAMPLE
+
+** keepalive机制
+#+BEGIN_EXAMPLE
+-ngx_http_process_request()                  解析完毕开始处理请求，~/src/http/ngx_http_request.c
+  -ngx_http_handler()                        各阶段处理，~/src/http/ngx_http_core_module.c
+    -ngx_http_request_t->keepalive           =0/1, 设置是否保活
+    -ngx_http_core_run_phases()
+...
+-ngx_http_finalize_request()                 结束请求, ~/src/http/ngx_http_request.c
+  -ngx_http_finalize_connection()
+    -ngx_http_set_keepalive()
+      -ngx_http_free_request()               释放当前请求内存
+      -设置数据接收处理句柄                  ngx_event_t->handler=ngx_http_keepalive_handler()
+      -ngx_reusable_connection()             设置链路重用，加入可重用队列
+      -ngx_add_timer()                       设置包括超时定时器
+#+END_EXAMPLE
 
 * TODO 子请求
 待作
-
-* TODO keepalive机制
-待做
-
-* TODO 关闭链接
-延迟关闭
 
 * 模块儿分类
 虽然nginx模块儿很多，功能各不相同，但根据其功能性质，大体上可分为4类：
   - handlers       :: 协同完成客户端请求、产生响应数据
   - filters        :: 过滤handler产生的数据
-  - upstream       :: 利用此模块儿，可充当反向代理的角色
+  - upstream       :: 利用此模块儿，可充当七层反向代理的角色
   - load-balance   :: 配合upstream，实现后端真实服务器的负载均衡
+  - stream         :: 实现四层反向代理
 
 * handle phase
   - 阶段名              :: 11阶段， =ngx_http_phases:~/src/http/ngx_http_core_module.h=
@@ -450,7 +472,7 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
     -ngx_http_top_body_filter()          尾部过滤链入口
   #+END_EXAMPLE
 
-* TODO upstream模块儿
+* 七层代理
 此模块儿与具体的协议无关，除HTTP外，还支持包括FASTCGI、SCGI、MEMCACHED等；
 典型应用是反向代理。
  - ngx_http_upstream_module
@@ -462,6 +484,9 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
  - ngx_http_upstream_ip_hash_module
    : ~/src/http/modules/ngx_http_upstream_ip_hash_module.c
    : 对应upstream{ip_hash;}配置，提供IP HASH类型的LB算法
+ - ngx_http_upstream_keepalive_module
+   : ~/src/http/modules/ngx_http_upstream_keepalive_module.c
+   : 对应upstream{keepalive}配置，提供upstream链路保活机制
 
 ** 解析流程
 upstream{}配置解析
@@ -501,8 +526,9 @@ proxy_pass配置解析
     -ngx_http_core_run_phases()
       -ngx_http_core_find_config_phase()   NGX_HTTP_FIND_CONFIG_PHASE阶段->checker
         -赋值ngx_http_request_t->content_handler()
-      -ngx_http_core_content_phase()       NGX_HTTP_CONTENT_PHASE阶段->checker
+      -ngx_http_core_content_phase()       NGX_HTTP_CONTENT_PHASE阶段->checker, ~/src/http/ngx_http_core_module.c
         -ngx_http_proxy_handler()            proxy_pass处理入口, ~/src/http/modules/ngx_http_proxy_module.c
+        -ngx_http_finalize_request()
 #+END_EXAMPLE
 
 #+BEGIN_EXAMPLE
@@ -545,9 +571,23 @@ proxy_pass配置解析
       -ngx_http_upstream_finalize_request()
   -ngx_http_run_posted_requests()             处理后续请求
 #+END_EXAMPLE
-#+BEGIN_EXAMPLE
--ngx_http_upstream_process_header()           ~/src/http/ngx_http_upstream.c
-#+END_EXAMPLE
+
+** upstream链路缓存
+
+* 四层代理
+ - ngx_stream_module
+   : ~/src/stream/ngx_stream.c
+ - ngx_stream_core_module
+   : ~/src/stream/ngx_stream_core_module.c
+ - ngx_stream_proxy_module
+   : ~/src/stream/ngx_stream_proxy_module.c
+ - ngx_stream_upstream_module
+   : ~/src/stream/ngx_stream_upstream_module.c
+ - ngx_stream_upstream_hash_module
+   : ~/src/stream/ngx_stream_upstream_hash_module.c
+
+** 解析流程
+** 处理流程
 
 * TODO load-balance模块儿
 可用称为辅助模块儿，主要为upstream模块儿服务，决定如何从多台后端服务器中
@@ -595,16 +635,6 @@ nginx提供了基于KEY限制链接的模块儿，比如限制来自某个IP的�
         location /search/ {
             limit_conn zone=one 5;         #基于源IP的限链接，并存的链接不能大于5
         }
-  #+END_EXAMPLE
-
-* TODO ngx_http_proxy_module
-HTTP的反向代理模块儿
-
-  #+BEGIN_EXAMPLE
-  ngx_http_upstream()  解析入口
-  ngx_http_upstream_server()  server解析
-  ngx_http_proxy_pass()  proxy_pass解析入口
-  ngx_http_proxy_handler()  内容处理阶段入口
   #+END_EXAMPLE
 
 * DONE ngx_http_req_limit_module
@@ -778,13 +808,22 @@ write event的控制，进而实现速度上限的控制。
 
 * SSL
  - ngx_openssl_module
-   : 定义在~/src/event/ngx_event_openssl.c
+   : ~/src/event/ngx_event_openssl.c
    : 对接底层openssl库
  - ngx_http_ssl_module
-   : 定义在~/src/http/modules/ngx_http_ssl_module.c
+   : ~/src/http/modules/ngx_http_ssl_module.c
    : 对接用户配置指令，提供SSL服务器的能力
+ - ngx_http_proxy_module
+   : ~/src/http/modules/ngx_http_proxy_module.c
+   : 对接upsream, 提供proxy_pass的SSL配置
+ - ngx_stream_ssl_module
+   : ~/src/stream/ngx_stream_ssl_module.c
+   : 对接downstream，实现四层SSL代理
+ - ngx_stream_proxy_module
+   : ~/stream/ngx_stream_proxy_module.c
+   : 对接upstream，实现四层SSL代理
 
-** DownStream
+** 七层DownStream
 #+BEGIN_EXAMPLE
 做为SSL服务器的处理流程
 -main()                            ~/src/core/nginx.c
@@ -816,9 +855,20 @@ write event的控制，进而实现速度上限的控制。
           -ngx_http_ssl_handshake_handler() 握手完成后，设置SSL解密后的处理入口为ngx_http_wait_request_handler()
 #+END_EXAMPLE
 
-** upstream
+** 七层upstream
 #+BEGIN_EXAMPLE
 做为SSL客户端的处理流程
 -main()
+  -ngx_ssl_init()
+  -ngx_init_cycle()                解析配置文件
+    -
+  -ngx_master_process_cycle()      启动worker进程，进入事件循环
+    -
 #+END_EXAMPLE
+
+** 四层Downstream
+ab
+
+** 四层upstream
+ab
 
