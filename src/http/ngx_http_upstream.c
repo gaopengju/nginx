@@ -1488,7 +1488,7 @@ ngx_http_upstream_connect(ngx_http_request_t *r, ngx_http_upstream_t *u)
 
 
 #if (NGX_HTTP_SSL)
-
+/* 初始化SSL upstream链路 */
 static void
 ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
     ngx_http_upstream_t *u, ngx_connection_t *c)
@@ -1502,6 +1502,7 @@ ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
         return;
     }
 
+    /* 初始化SSL链路环境 */
     if (ngx_ssl_create_connection(u->conf->ssl, c,
                                   NGX_SSL_BUFFER|NGX_SSL_CLIENT)
         != NGX_OK)
@@ -1554,6 +1555,7 @@ ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
 
     r->connection->log->action = "SSL handshaking to upstream";
 
+    /* 握手 */
     rc = ngx_ssl_handshake(c);
 
     if (rc == NGX_AGAIN) {
@@ -1566,6 +1568,7 @@ ngx_http_upstream_ssl_init_connection(ngx_http_request_t *r,
         return;
     }
 
+    /* 握手结束，设置相应的报文处理句柄 */
     ngx_http_upstream_ssl_handshake(c);
 }
 
@@ -1602,17 +1605,19 @@ ngx_http_upstream_ssl_handshake(ngx_connection_t *c)
             }
         }
 
+        /* 支持会话恢复 */
         if (u->conf->ssl_session_reuse) {
             u->peer.save_session(&u->peer, u->peer.data);
         }
-
+        /* 设置处理句柄 */
         c->write->handler = ngx_http_upstream_handler;
         c->read->handler = ngx_http_upstream_handler;
 
         c = r->connection;
 
+        /* 发送请求 */
         ngx_http_upstream_send_request(r, u, 1);
-
+        
         ngx_http_run_posted_requests(c);
         return;
     }

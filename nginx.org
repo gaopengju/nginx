@@ -387,8 +387,9 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
       -ngx_add_timer()                       设置包括超时定时器
 #+END_EXAMPLE
 
-* TODO 子请求
-待作
+** TODO 子请求
+** TODO pipe
+** TODO 延迟关闭
 
 * 模块儿分类
 虽然nginx模块儿很多，功能各不相同，但根据其功能性质，大体上可分为4类：
@@ -398,8 +399,8 @@ sigsuspend()--master进程等系统调用上。nginx进程主要关注两类事�
   - load-balance   :: 配合upstream，实现后端真实服务器的负载均衡
   - stream         :: 实现四层反向代理
 
-** 模块儿初始化顺序
-
+** TODO 模块儿初始化顺序
+   
 * handle phase
   - 阶段名              :: 11阶段， =ngx_http_phases:~/src/http/ngx_http_core_module.h=
   - 注册                :: =各模块儿ngx_module_t->ctx->postconfiguration()=
@@ -885,10 +886,27 @@ write event的控制，进而实现速度上限的控制。
 做为SSL客户端的处理流程
 -main()
   -ngx_ssl_init()
-  -ngx_init_cycle()                解析配置文件
-    -
+  -ngx_init_cycle()                解析配置
+    -ngx_http_proxy_merge_loc_conf() 配置解析后，合并结果，~/src/http/modules/ngx_http_proxy_module.c
+      -ngx_http_proxy_set_ssl()      创建SSL环境
   -ngx_master_process_cycle()      启动worker进程，进入事件循环
-    -
+    -ngx_http_proxy_handler()        upstream处理入口，~/src/http/modules/ngx_http_proxy_module.c
+      -ngx_http_read_client_request_body()
+        -ngx_http_do_read_client_request_body()
+        -ngx_http_upstream_init()
+          -ngx_http_upstream_init_request()
+            -ngx_http_upstream_t->create_request()       创建请求
+            -ngx_http_upstream_srv_conf_t->peer.init()   初始化LB环境, 获取链接的服务器
+            -ngx_http_upstream_connect()                 ~/src/http/ngx_http_upstream.c
+              -ngx_event_connect_peer()                  创建连接
+                -socket()
+                -connect()
+              -ngx_http_upstream_ssl_init_connection()   SSL环境下的发送函数
+                -ngx_ssl_create_connection()
+                -ngx_ssl_handshake()                     握手成功后，设置底层收发处理函数为ngx_ssl_recv/ngx_ssl_write()
+                -ngx_http_upstream_ssl_handshake()
+                  -设置ngx_connection_t->write/read->handler  =ngx_http_upstream_handler()
+                  -ngx_http_upstream_send_request()      发送请求
 #+END_EXAMPLE
 
 ** 四层Downstream

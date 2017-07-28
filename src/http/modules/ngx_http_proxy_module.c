@@ -4303,7 +4303,7 @@ ngx_http_proxy_lowat_check(ngx_conf_t *cf, void *post, void *data)
 
 
 #if (NGX_HTTP_SSL)
-
+/* proxy_pass配置解析结束后，创建SSL工作环境 */
 static ngx_int_t
 ngx_http_proxy_set_ssl(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *plcf)
 {
@@ -4316,20 +4316,22 @@ ngx_http_proxy_set_ssl(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *plcf)
 
     plcf->upstream.ssl->log = cf->log;
 
+    /* 创建SSL环境 */
     if (ngx_ssl_create(plcf->upstream.ssl, plcf->ssl_protocols, NULL)
         != NGX_OK)
     {
         return NGX_ERROR;
     }
 
+    /* 设置清理句柄 */
     cln = ngx_pool_cleanup_add(cf->pool, 0);
     if (cln == NULL) {
         return NGX_ERROR;
     }
-
     cln->handler = ngx_ssl_cleanup_ctx;
     cln->data = plcf->upstream.ssl;
 
+    /* 加载公钥、私钥，配合服务器对本端认证 */
     if (plcf->ssl_certificate.len) {
 
         if (plcf->ssl_certificate_key.len == 0) {
@@ -4347,12 +4349,14 @@ ngx_http_proxy_set_ssl(ngx_conf_t *cf, ngx_http_proxy_loc_conf_t *plcf)
         }
     }
 
+    /* 使能配置的加密套件 */
     if (ngx_ssl_ciphers(cf, plcf->upstream.ssl, &plcf->ssl_ciphers, 0)
         != NGX_OK)
     {
         return NGX_ERROR;
     }
 
+    /* 加载可信任CA证书、CRL，以验证服务器端 */
     if (plcf->upstream.ssl_verify) {
         if (plcf->ssl_trusted_certificate.len == 0) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, 0,

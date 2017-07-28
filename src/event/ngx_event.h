@@ -122,6 +122,7 @@ struct ngx_event_s {
                                             keepalive状态，读/写事件为
                                                  ngx_http_keepalive_handler()
                                                  ngx_http_empty_handler()
+                                            proxy_pass SSL: ngx_http_upstream_handler()
                                           */
 #if (NGX_HAVE_IOCP)
     ngx_event_ovlp_t ovlp;

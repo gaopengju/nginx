@@ -221,7 +221,7 @@ typedef struct {
     unsigned                         change_buffering:1;
 
 #if (NGX_HTTP_SSL)
-    ngx_ssl_t                       *ssl;
+    ngx_ssl_t                       *ssl;               /* SSL环境 */
     ngx_flag_t                       ssl_session_reuse; /* 配置指令"proxy_ssl_session_reuse on | off;"
                                                            0/1, SSL会话恢复 */
 
