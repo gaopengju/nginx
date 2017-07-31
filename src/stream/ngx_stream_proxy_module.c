@@ -48,7 +48,7 @@ typedef struct {
     ngx_str_t                        ssl_certificate_key;
     ngx_array_t                     *ssl_passwords;
 
-    ngx_ssl_t                       *ssl;
+    ngx_ssl_t                       *ssl;         /* SSL环境 */
 #endif
 
     ngx_stream_upstream_srv_conf_t  *upstream;    /* 对应的upstream */
@@ -792,6 +792,7 @@ ngx_stream_proxy_ssl_init_connection(ngx_stream_session_t *s)
 
     pscf = ngx_stream_get_module_srv_conf(s, ngx_stream_proxy_module);
 
+    /* 创建SSL对象，并关联插口 */
     if (ngx_ssl_create_connection(pscf->ssl, pc, NGX_SSL_BUFFER|NGX_SSL_CLIENT)
         != NGX_OK)
     {
@@ -805,7 +806,7 @@ ngx_stream_proxy_ssl_init_connection(ngx_stream_session_t *s)
             return;
         }
     }
-
+    /* 会话重用 */
     if (pscf->ssl_session_reuse) {
         if (u->peer.set_session(&u->peer, u->peer.data) != NGX_OK) {
             ngx_stream_proxy_finalize(s, NGX_ERROR);
@@ -815,8 +816,8 @@ ngx_stream_proxy_ssl_init_connection(ngx_stream_session_t *s)
 
     s->connection->log->action = "SSL handshaking to upstream";
 
+    /* 启动握手 */
     rc = ngx_ssl_handshake(pc);
-
     if (rc == NGX_AGAIN) {
 
         if (!pc->write->timer_set) {
@@ -826,7 +827,8 @@ ngx_stream_proxy_ssl_init_connection(ngx_stream_session_t *s)
         pc->ssl->handler = ngx_stream_proxy_ssl_handshake;
         return;
     }
-
+    
+    /* 握手成功，处理 */
     ngx_stream_proxy_ssl_handshake(pc);
 }
 
@@ -844,7 +846,7 @@ ngx_stream_proxy_ssl_handshake(ngx_connection_t *pc)
     pscf = ngx_stream_get_module_srv_conf(s, ngx_stream_proxy_module);
 
     if (pc->ssl->handshaked) {
-
+        /* 验证证书 */
         if (pscf->ssl_verify) {
             rc = SSL_get_verify_result(pc->ssl->connection);
 
@@ -864,7 +866,7 @@ ngx_stream_proxy_ssl_handshake(ngx_connection_t *pc)
                 goto failed;
             }
         }
-
+        /* 会话重用 */
         if (pscf->ssl_session_reuse) {
             u = s->upstream;
             u->peer.save_session(&u->peer, u->peer.data);
@@ -873,7 +875,8 @@ ngx_stream_proxy_ssl_handshake(ngx_connection_t *pc)
         if (pc->write->timer_set) {
             ngx_del_timer(pc->write);
         }
-
+        
+        /* */
         ngx_stream_proxy_init_upstream(s);
 
         return;
@@ -1557,7 +1560,6 @@ ngx_stream_proxy_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_conf_merge_ptr_value(conf->local, prev->local, NULL);
 
 #if (NGX_STREAM_SSL)
-
     ngx_conf_merge_value(conf->ssl_enable, prev->ssl_enable, 0);
 
     ngx_conf_merge_value(conf->ssl_session_reuse,
@@ -1591,6 +1593,7 @@ ngx_stream_proxy_merge_srv_conf(ngx_conf_t *cf, void *parent, void *child)
 
     ngx_conf_merge_ptr_value(conf->ssl_passwords, prev->ssl_passwords, NULL);
 
+    /* 构建SSL环境 */
     if (conf->ssl_enable && ngx_stream_proxy_set_ssl(cf, conf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
@@ -1608,6 +1611,7 @@ ngx_stream_proxy_set_ssl(ngx_conf_t *cf, ngx_stream_proxy_srv_conf_t *pscf)
 {
     ngx_pool_cleanup_t  *cln;
 
+    /* 分配底层SSL环境 */
     pscf->ssl = ngx_pcalloc(cf->pool, sizeof(ngx_ssl_t));
     if (pscf->ssl == NULL) {
         return NGX_ERROR;
@@ -1615,18 +1619,20 @@ ngx_stream_proxy_set_ssl(ngx_conf_t *cf, ngx_stream_proxy_srv_conf_t *pscf)
 
     pscf->ssl->log = cf->log;
 
+    /* 创建SSL环境 */
     if (ngx_ssl_create(pscf->ssl, pscf->ssl_protocols, NULL) != NGX_OK) {
         return NGX_ERROR;
     }
 
+    /* 设定SSL环境清理句柄 */
     cln = ngx_pool_cleanup_add(cf->pool, 0);
     if (cln == NULL) {
         return NGX_ERROR;
     }
-
     cln->handler = ngx_ssl_cleanup_ctx;
     cln->data = pscf->ssl;
 
+    /* 加载证书 */
     if (pscf->ssl_certificate.len) {
 
         if (pscf->ssl_certificate_key.len == 0) {
@@ -1644,10 +1650,12 @@ ngx_stream_proxy_set_ssl(ngx_conf_t *cf, ngx_stream_proxy_srv_conf_t *pscf)
         }
     }
 
+    /* 加载推荐算法 */
     if (ngx_ssl_ciphers(cf, pscf->ssl, &pscf->ssl_ciphers, 0) != NGX_OK) {
         return NGX_ERROR;
     }
 
+    /* 加载可信任的CA证书，即CRL */
     if (pscf->ssl_verify) {
         if (pscf->ssl_trusted_certificate.len == 0) {
             ngx_log_error(NGX_LOG_EMERG, cf->log, 0,

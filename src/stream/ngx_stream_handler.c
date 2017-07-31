@@ -249,11 +249,13 @@ ngx_stream_ssl_init_connection(ngx_ssl_t *ssl, ngx_connection_t *c)
     ngx_stream_session_t   *s;
     ngx_stream_ssl_conf_t  *sslcf;
 
+    /* 创建SSL对象，并关联插口 */
     if (ngx_ssl_create_connection(ssl, c, 0) == NGX_ERROR) {
         ngx_stream_close_connection(c);
         return;
     }
 
+    /* 启动握手 */
     if (ngx_ssl_handshake(c) == NGX_AGAIN) {
 
         s = c->data;
@@ -266,7 +268,7 @@ ngx_stream_ssl_init_connection(ngx_ssl_t *ssl, ngx_connection_t *c)
 
         return;
     }
-
+    /* 握手结束后处理 */
     ngx_stream_ssl_handshake_handler(c);
 }
 
@@ -283,6 +285,7 @@ ngx_stream_ssl_handshake_handler(ngx_connection_t *c)
         ngx_del_timer(c->read);
     }
 
+    /* 初始化会话 */
     ngx_stream_init_session(c);
 }
 

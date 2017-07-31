@@ -1039,8 +1039,54 @@ write event的控制，进而实现速度上限的控制。
 #+END_EXAMPLE
 
 ** 四层Downstream
-ab
+#+BEGIN_EXAMPLE
+做为SSL服务器的处理流程
+-main()                            ~/src/core/nginx.c
+  -ngx_ssl_init()                  初始化SSL环境，~/src/event/ngx_event_openssl.c
+  -ngx_init_cycle()                解析配置
+    -ngx_stream_proxy_merge_srv_conf()   解析配置后，合并结果, ~/src/stream/ngx_stream_proxy_module.c
+      -ngx_stream_proxy_set_ssl()
+        -ngx_ssl_create()                创建SSL环境
+        -ngx_ssl_certificates()          加载证书及私钥
+        -ngx_ssl_ciphers()               加载指定套件
+        -ngx_ssl_trusted_certificate()   加载可信任CA
+        -ngx_ssl_crl()                   加载CRL表
+  -ngx_master_process_cycle()      启动worker进程，进入事件循环
+    -ngx_process_events_and_timers() EPOLL处理入口
+      -ngx_event_process_posted()    处理accept事件
+        -ngx_event_accept()
+          -accept()
+          -ngx_listening_t->handler()
+          -->ngx_stream_init_connection()    初始化upstream环境，~/src/stream/ngx_stream_handler.c
+            -查找连接的server配置
+            -ngx_stream_ssl_init_connection()
+              -ngx_ssl_create_connection()   创建SSL对象，并关联插口
+                -SSL_new()
+                -SSL_set_fd()
+                -SSL_set_accept_state()
+                -SSL_set_ex_data()
+              -ngx_ssl_handshake()           启动握手
+                -SSL_do_handshake()
+              -ngx_stream_ssl_handshake_handler()
+                -ngx_stream_init_session()
+                  -ngx_stream_proxy_handler()握手成功，后续收发报文流程
+                    -ngx_stream_proxy_downstream_handler()  处理downstream报文
+                    -ngx_stream_proxy_connect()             连接上行服务器
+#+END_EXAMPLE
 
 ** 四层upstream
-ab
+#+BEGIN_EXAMPLE
+-ngx_stream_proxy_connect()                 ~/src/stream/ngx_stream_proxy_module.c
+  -ngx_event_connect_peer()
+    -connect()                              建立插口
+  -ngx_stream_proxy_connect_handler()
+    -ngx_stream_proxy_init_upstream()
+      -ngx_stream_proxy_ssl_init_connection()
+        -ngx_ssl_create_connection()        创建SSL对象，关联插口
+        -ngx_ssl_handshake()                开始握手协商
+        -ngx_stream_proxy_ssl_handshake()
+          -ngx_stream_proxy_upstream_handler()
+            -ngx_stream_proxy_process()     报文处理
+#+END_EXAMPLE
+
 
