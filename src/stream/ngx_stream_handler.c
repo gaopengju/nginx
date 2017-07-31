@@ -19,7 +19,7 @@ static void ngx_stream_ssl_init_connection(ngx_ssl_t *ssl, ngx_connection_t *c);
 static void ngx_stream_ssl_handshake_handler(ngx_connection_t *c);
 #endif
 
-
+/* ACCEPT后，执行此函数，做stream初始化 */
 void
 ngx_stream_init_connection(ngx_connection_t *c)
 {
@@ -41,10 +41,8 @@ ngx_stream_init_connection(ngx_connection_t *c)
     ngx_stream_core_srv_conf_t   *cscf;
     ngx_stream_core_main_conf_t  *cmcf;
 
-    /* find the server configuration for the address:port */
-
+    /* 查找对应的服务器，find the server configuration for the address:port */
     port = c->listening->servers;
-
     if (port->naddrs > 1) {
 
         /*
@@ -54,14 +52,13 @@ ngx_stream_init_connection(ngx_connection_t *c)
          *
          * AcceptEx() and recvmsg() already gave this address.
          */
-
+        /* 从链路获取对应的本地绑定的IP地址 */ 
         if (ngx_connection_local_sockaddr(c, NULL, 0) != NGX_OK) {
             ngx_stream_close_connection(c);
             return;
         }
 
         sa = c->local_sockaddr;
-
         switch (sa->sa_family) {
 
 #if (NGX_HAVE_INET6)
@@ -85,17 +82,14 @@ ngx_stream_init_connection(ngx_connection_t *c)
 
         default: /* AF_INET */
             sin = (struct sockaddr_in *) sa;
-
             addr = port->addrs;
 
-            /* the last address is "*" */
-
+            /* 匹配以查找对应的server配置，the last address is "*" */
             for (i = 0; i < port->naddrs - 1; i++) {
                 if (addr[i].addr == sin->sin_addr.s_addr) {
                     break;
                 }
             }
-
             addr_conf = &addr[i].conf;
 
             break;
@@ -118,6 +112,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         }
     }
 
+    /* 初始化四层流 */
     s = ngx_pcalloc(c->pool, sizeof(ngx_stream_session_t));
     if (s == NULL) {
         ngx_stream_close_connection(c);
@@ -129,12 +124,10 @@ ngx_stream_init_connection(ngx_connection_t *c)
     s->srv_conf = addr_conf->ctx->srv_conf;
 
     s->connection = c;
-    c->data = s;
+    c->data = s;           /* 关联链路结构 */
 
     cscf = ngx_stream_get_module_srv_conf(s, ngx_stream_core_module);
-
     ngx_set_connection_log(c, cscf->error_log);
-
     len = ngx_sock_ntop(c->sockaddr, c->socklen, text, NGX_SOCKADDR_STRLEN, 1);
 
     ngx_log_error(NGX_LOG_INFO, c->log, 0, "*%uA %sclient %*s connected to %V",
@@ -146,9 +139,8 @@ ngx_stream_init_connection(ngx_connection_t *c)
     c->log->data = s;
     c->log->action = "initializing connection";
     c->log_error = NGX_ERROR_INFO;
-
+                           /* 分配变量空间 */
     cmcf = ngx_stream_get_module_main_conf(s, ngx_stream_core_module);
-
     s->variables = ngx_pcalloc(s->connection->pool,
                                cmcf->variables.nelts
                                * sizeof(ngx_stream_variable_value_t));
@@ -158,6 +150,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         return;
     }
 
+    /* 链接限数 */
     if (cmcf->limit_conn_handler) {
         rc = cmcf->limit_conn_handler(s);
 
@@ -166,7 +159,8 @@ ngx_stream_init_connection(ngx_connection_t *c)
             return;
         }
     }
-
+    
+    /* 访问控制 */
     if (cmcf->access_handler) {
         rc = cmcf->access_handler(s);
 
@@ -176,6 +170,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         }
     }
 
+    /* 设置nodelay */
     if (c->type == SOCK_STREAM
         && cscf->tcp_nodelay
         && c->tcp_nodelay == NGX_TCP_NODELAY_UNSET)
@@ -196,7 +191,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
         c->tcp_nodelay = NGX_TCP_NODELAY_SET;
     }
 
-
+    /* 初始化SSL链路 */
 #if (NGX_STREAM_SSL)
     {
     ngx_stream_ssl_conf_t  *sslcf;
@@ -220,6 +215,7 @@ ngx_stream_init_connection(ngx_connection_t *c)
     }
 #endif
 
+    /* 连接后端upstream */
     ngx_stream_init_session(c);
 }
 
@@ -234,13 +230,13 @@ ngx_stream_init_session(ngx_connection_t *c)
     c->log->action = "handling client connection";
 
     cscf = ngx_stream_get_module_srv_conf(s, ngx_stream_core_module);
-
     s->ctx = ngx_pcalloc(c->pool, sizeof(void *) * ngx_stream_max_module);
     if (s->ctx == NULL) {
         ngx_stream_close_connection(c);
         return;
     }
 
+    /* 调用处理句柄, =ngx_stream_proxy_handler() */
     cscf->handler(s);
 }
 

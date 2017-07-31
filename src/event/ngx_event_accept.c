@@ -307,7 +307,9 @@ ngx_event_accept(ngx_event_t *ev)
         log->data = NULL;
         log->handler = NULL;
 
-        /* 调用对应的处理函数， ngx_http_init_connection() */
+        /* 调用对应的处理函数， 
+           http: ngx_http_init_connection()
+           stream: ngx_stream_init_connection() */
         ls->handler(c);
 
         if (ngx_event_flags & NGX_USE_KQUEUE_EVENT) {

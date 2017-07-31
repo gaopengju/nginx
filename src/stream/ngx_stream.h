@@ -26,23 +26,25 @@ typedef struct ngx_stream_session_s  ngx_stream_session_t;
 #include <ngx_stream_upstream_round_robin.h>
 
 
+/* 对比7层代理配置信息 ngx_http_conf_ctx_t, 少了loc_conf，因为四层代理
+   没有location的概念 */
 typedef struct {
-    void                         **main_conf;
-    void                         **srv_conf;
+    void                         **main_conf;   /* upstream{}层级配置 */
+    void                         **srv_conf;    /* server{}层级配置 */
 } ngx_stream_conf_ctx_t;
 
-
+/* stream{server{listen}}解析结果 */
 typedef struct {
-    ngx_sockaddr_t                 sockaddr;
+    ngx_sockaddr_t                 sockaddr;  /* 监听地址 */
     socklen_t                      socklen;
 
     /* server ctx */
-    ngx_stream_conf_ctx_t         *ctx;
+    ngx_stream_conf_ctx_t         *ctx;       /* 对应的server{}层级配置 */
 
-    unsigned                       bind:1;
+    unsigned                       bind:1;    /* */
     unsigned                       wildcard:1;
 #if (NGX_STREAM_SSL)
-    unsigned                       ssl:1;
+    unsigned                       ssl:1;     /* 是否为SSL */
 #endif
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
     unsigned                       ipv6only:1;
@@ -50,14 +52,14 @@ typedef struct {
 #if (NGX_HAVE_REUSEPORT)
     unsigned                       reuseport:1;
 #endif
-    unsigned                       so_keepalive:2;
+    unsigned                       so_keepalive:2; /* 1/2, on/off */
 #if (NGX_HAVE_KEEPALIVE_TUNABLE)
     int                            tcp_keepidle;
     int                            tcp_keepintvl;
     int                            tcp_keepcnt;
 #endif
     int                            backlog;
-    int                            type;
+    int                            type;      /* SOCK_DGRAM */
 } ngx_stream_listen_t;
 
 
@@ -107,64 +109,65 @@ typedef struct {
 
 typedef ngx_int_t (*ngx_stream_access_pt)(ngx_stream_session_t *s);
 
-
+/* 四层代理的顶层信息结构 */
 typedef struct {
-    ngx_array_t                    servers;     /* ngx_stream_core_srv_conf_t */
-    ngx_array_t                    listen;      /* ngx_stream_listen_t */
+    ngx_array_t servers;     /* 所有server{}配置解析结果, ngx_stream_core_srv_conf_t */
+    ngx_array_t listen;      /* server{listen}配置解析结果, ngx_stream_listen_t */
 
-    ngx_stream_access_pt           limit_conn_handler;
-    ngx_stream_access_pt           access_handler;
+    ngx_stream_access_pt  limit_conn_handler;
+    ngx_stream_access_pt  access_handler;
 
-    ngx_hash_t                     variables_hash;
+    /* 后续为变量相关 */
+    ngx_hash_t  variables_hash;
+    ngx_array_t variables;   /* ngx_stream_variable_t */
+    ngx_uint_t  ncaptures;
 
-    ngx_array_t                    variables;   /* ngx_stream_variable_t */
-    ngx_uint_t                     ncaptures;
+    ngx_uint_t  variables_hash_max_size;
+    ngx_uint_t  variables_hash_bucket_size;
 
-    ngx_uint_t                     variables_hash_max_size;
-    ngx_uint_t                     variables_hash_bucket_size;
-
-    ngx_hash_keys_arrays_t        *variables_keys;
+    ngx_hash_keys_arrays_t *variables_keys; /* 包括 ngx_stream_core_variables[] */
 } ngx_stream_core_main_conf_t;
 
 
 typedef void (*ngx_stream_handler_pt)(ngx_stream_session_t *s);
 
-
+/* stream{server{}}配置解析 */
 typedef struct {
-    ngx_stream_handler_pt          handler;         /* ngx_stream_proxy_handler() */
+    ngx_stream_handler_pt          handler;    /* proxy_pass: ngx_stream_proxy_handler() */
 
-    ngx_stream_conf_ctx_t         *ctx;
+    ngx_stream_conf_ctx_t         *ctx;        /* 配置环境上下文层级结构 */
 
     u_char                        *file_name;
     ngx_int_t                      line;
 
-    ngx_flag_t                     tcp_nodelay;
+    ngx_flag_t                     tcp_nodelay;/* 配置指令“tcp_nodelay on/off” */
 
     ngx_log_t                     *error_log;
 } ngx_stream_core_srv_conf_t;
 
 
+/* 对应stream流信息 */
 struct ngx_stream_session_s {
-    uint32_t                       signature;         /* "STRM" */
+    uint32_t  signature;         /* NGX_STREAM_MODULE, "STRM" */
 
-    ngx_connection_t              *connection;
+    ngx_connection_t *connection;/* downstream底层链路 */
 
-    off_t                          received;
+    off_t  received;
 
-    ngx_log_handler_pt             log_handler;
+    ngx_log_handler_pt log_handler;
 
-    void                         **ctx;
-    void                         **main_conf;
-    void                         **srv_conf;
+    void   **ctx;                /* 对应的配置环境上下文 */
+    void   **main_conf;
+    void   **srv_conf;
 
-    ngx_stream_upstream_t         *upstream;
+    ngx_stream_upstream_t *upstream;          /* 对应的upstream信息 */
 
-    ngx_stream_variable_value_t   *variables;
+    ngx_stream_variable_value_t   *variables; /* 可读取的变量 */
 
 #if (NGX_PCRE)
-    ngx_uint_t                     ncaptures;
-    int                           *captures;
-    u_char                        *captures_data;
+    ngx_uint_t  ncaptures;
+    int         *captures;
+    u_char      *captures_data;
 #endif
 };
 

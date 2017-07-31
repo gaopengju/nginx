@@ -46,7 +46,7 @@ static ngx_core_module_t  ngx_stream_module_ctx = {
     NULL
 };
 
-
+/* 核心模块儿，实现4层代理 */
 ngx_module_t  ngx_stream_module = {
     NGX_MODULE_V1,
     &ngx_stream_module_ctx,                /* module context */
@@ -62,7 +62,7 @@ ngx_module_t  ngx_stream_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* 4层代理的stream{}层级配置解析 */
 static char *
 ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -76,38 +76,36 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_stream_core_srv_conf_t   **cscfp;
     ngx_stream_core_main_conf_t   *cmcf;
 
+    /* 最外层级，第一次进入时，此指针为空；对应 
+       ngx_conf_t->ctx[ngx_conf_t->cycle->modules[i]->index]
+       <===> ngx_cycle_t->conf_ctx[ngx_conf_t->cycle->modules[i]->index] */
     if (*(ngx_stream_conf_ctx_t **) conf) {
         return "is duplicate";
     }
 
-    /* the main stream context */
-
+    /* 分配空间，并赋值；the main stream context */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_stream_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
-
     *(ngx_stream_conf_ctx_t **) conf = ctx;
 
-    /* count the number of the stream modules and set up their indices */
-
+    
+    /* 计算四层代理模块儿计数；count the number of the stream modules and set up their indices */
     ngx_stream_max_module = ngx_count_modules(cf->cycle, NGX_STREAM_MODULE);
 
 
-    /* the stream main_conf context, it's the same in the all stream contexts */
-
+    /* 为各模块儿主环境分配stream{}层级配置指针，
+       the stream main_conf context, it's the same in the all stream contexts */
     ctx->main_conf = ngx_pcalloc(cf->pool,
                                  sizeof(void *) * ngx_stream_max_module);
     if (ctx->main_conf == NULL) {
         return NGX_CONF_ERROR;
     }
 
-
     /*
-     * the stream null srv_conf context, it is used to merge
-     * the server{}s' srv_conf's
-     */
-
+     * 为各模块儿主环境分配server{}层级配置指针
+     * the stream null srv_conf context, it is used to merge the server{}s' srv_conf's */
     ctx->srv_conf = ngx_pcalloc(cf->pool,
                                 sizeof(void *) * ngx_stream_max_module);
     if (ctx->srv_conf == NULL) {
@@ -117,8 +115,7 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     /*
      * create the main_conf's and the null srv_conf's of the all stream modules
-     */
-
+     *//* 调用各模块儿的配置内存分配函数 */
     for (m = 0; cf->cycle->modules[m]; m++) {
         if (cf->cycle->modules[m]->type != NGX_STREAM_MODULE) {
             continue;
@@ -127,14 +124,14 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         module = cf->cycle->modules[m]->ctx;
         mi = cf->cycle->modules[m]->ctx_index;
 
-        if (module->create_main_conf) {
+        if (module->create_main_conf) {    /* 创建stream{}层级配置内存 */
             ctx->main_conf[mi] = module->create_main_conf(cf);
             if (ctx->main_conf[mi] == NULL) {
                 return NGX_CONF_ERROR;
             }
         }
 
-        if (module->create_srv_conf) {
+        if (module->create_srv_conf) {     /* 创建server{}层级配置内存 */
             ctx->srv_conf[mi] = module->create_srv_conf(cf);
             if (ctx->srv_conf[mi] == NULL) {
                 return NGX_CONF_ERROR;
@@ -142,10 +139,11 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-
+    /* 更换配置环境，解析stream{} */
     pcf = *cf;
     cf->ctx = ctx;
 
+    /* 解析配置前，注册变量 */
     for (m = 0; cf->cycle->modules[m]; m++) {
         if (cf->cycle->modules[m]->type != NGX_STREAM_MODULE) {
             continue;
@@ -161,20 +159,17 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
 
-    /* parse inside the stream{} block */
-
+    /* 解析，parse inside the stream{} block */
     cf->module_type = NGX_STREAM_MODULE;
     cf->cmd_type = NGX_STREAM_MAIN_CONF;
     rv = ngx_conf_parse(cf, NULL);
-
     if (rv != NGX_CONF_OK) {
         *cf = pcf;
         return rv;
     }
 
 
-    /* init stream{} main_conf's, merge the server{}s' srv_conf's */
-
+    /* 合并server{}层级配置信息，init stream{} main_conf's, merge the server{}s' srv_conf's */
     cmcf = ctx->main_conf[ngx_stream_core_module.ctx_index];
     cscfp = cmcf->servers.elts;
 
@@ -216,6 +211,7 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    /* 配置解析完毕，注册回调等 */
     for (m = 0; cf->cycle->modules[m]; m++) {
         if (cf->cycle->modules[m]->type != NGX_STREAM_MODULE) {
             continue;
@@ -230,13 +226,15 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    /* 初始化四层代理变量 */
     if (ngx_stream_variables_init_vars(cf) != NGX_OK) {
         return NGX_CONF_ERROR;
     }
 
+    /* 恢复配置信息结构 */
     *cf = pcf;
 
-
+    /* 汇总监听端口，建立以端口为索引的数据结构，索引内容为 ngx_stream_listen_t */
     if (ngx_array_init(&ports, cf->temp_pool, 4, sizeof(ngx_stream_conf_port_t))
         != NGX_OK)
     {
@@ -244,13 +242,13 @@ ngx_stream_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     }
 
     listen = cmcf->listen.elts;
-
     for (i = 0; i < cmcf->listen.nelts; i++) {
         if (ngx_stream_add_ports(cf, &ports, &listen[i]) != NGX_OK) {
             return NGX_CONF_ERROR;
         }
     }
 
+    /* 建立监听链路 */
     return ngx_stream_optimize_servers(cf, &ports);
 }
 
@@ -283,7 +281,6 @@ ngx_stream_add_ports(ngx_conf_t *cf, ngx_array_t *ports,
     }
 
     /* add a port to the port list */
-
     port = ngx_array_push(ports);
     if (port == NULL) {
         return NGX_ERROR;
@@ -312,7 +309,7 @@ found:
     return NGX_OK;
 }
 
-
+/* 建立监听链路 */
 static char *
 ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
 {
@@ -325,7 +322,7 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
 
     port = ports->elts;
     for (p = 0; p < ports->nelts; p++) {
-
+        /* 排序端口对应的地址，bind的优先，精确地址的优先 */
         ngx_sort(port[p].addrs.elts, (size_t) port[p].addrs.nelts,
                  sizeof(ngx_stream_conf_addr_t), ngx_stream_cmp_conf_addrs);
 
@@ -335,8 +332,7 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
         /*
          * if there is the binding to the "*:port" then we need to bind()
          * to the "*:port" only and ignore the other bindings
-         */
-
+         *//* 有模糊匹配地址，即有0.0.0.0 */
         if (addr[last - 1].opt.wildcard) {
             addr[last - 1].opt.bind = 1;
             bind_wildcard = 1;
@@ -348,12 +344,13 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
         i = 0;
 
         while (i < last) {
-
+            /* 存在模糊地址，则跳过非绑定精确地址，由模糊地址代替它接收请求 */
             if (bind_wildcard && !addr[i].opt.bind) {
                 i++;
                 continue;
             }
 
+            /* 创建监听结构 */
             ls = ngx_create_listening(cf, &addr[i].opt.sockaddr.sockaddr,
                                       addr[i].opt.socklen);
             if (ls == NULL) {
@@ -361,7 +358,7 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
             }
 
             ls->addr_ntop = 1;
-            ls->handler = ngx_stream_init_connection;
+            ls->handler = ngx_stream_init_connection;  /* 设定句柄 */
             ls->pool_size = 256;
             ls->type = addr[i].opt.type;
 
@@ -391,10 +388,9 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
 #endif
 
             stport = ngx_palloc(cf->pool, sizeof(ngx_stream_port_t));
-            if (stport == NULL) {
+            if (stport == NULL) {                      /* 初始化对应的server配置 */
                 return NGX_CONF_ERROR;
             }
-
             ls->servers = stport;
 
             stport->naddrs = i + 1;
@@ -414,6 +410,7 @@ ngx_stream_optimize_servers(ngx_conf_t *cf, ngx_array_t *ports)
                 break;
             }
 
+            /* 端口重用 */
             if (ngx_clone_listening(cf, ls) != NGX_OK) {
                 return NGX_CONF_ERROR;
             }

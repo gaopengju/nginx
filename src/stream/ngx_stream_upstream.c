@@ -65,7 +65,7 @@ ngx_module_t  ngx_stream_upstream_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* stream{upstream{}}解析函数 */
 static char *
 ngx_stream_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
 {
@@ -85,7 +85,7 @@ ngx_stream_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     u.host = value[1];
     u.no_resolve = 1;
     u.no_port = 1;
-
+    /* 存储upstream名，以备后续查找 */
     uscf = ngx_stream_upstream_add(cf, &u, NGX_STREAM_UPSTREAM_CREATE
                                            |NGX_STREAM_UPSTREAM_WEIGHT
                                            |NGX_STREAM_UPSTREAM_MAX_FAILS
@@ -96,28 +96,24 @@ ngx_stream_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
         return NGX_CONF_ERROR;
     }
 
-
+    /* 分配upstream{}上下文环境 */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_stream_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
-
     stream_ctx = cf->ctx;
-    ctx->main_conf = stream_ctx->main_conf;
+    ctx->main_conf = stream_ctx->main_conf;   /* 主环境回指 */
 
     /* the upstream{}'s srv_conf */
-
-    ctx->srv_conf = ngx_pcalloc(cf->pool,
+    ctx->srv_conf = ngx_pcalloc(cf->pool,     /* server环境新建指针 */
                                 sizeof(void *) * ngx_stream_max_module);
     if (ctx->srv_conf == NULL) {
         return NGX_CONF_ERROR;
     }
-
     ctx->srv_conf[ngx_stream_upstream_module.ctx_index] = uscf;
-
     uscf->srv_conf = ctx->srv_conf;
 
-    for (m = 0; cf->cycle->modules[m]; m++) {
+    for (m = 0; cf->cycle->modules[m]; m++) { /* 分配配置内存 */
         if (cf->cycle->modules[m]->type != NGX_STREAM_MODULE) {
             continue;
         }
@@ -141,8 +137,7 @@ ngx_stream_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     }
 
 
-    /* parse inside upstream{} */
-
+    /* 递归解析，parse inside upstream{} */
     pcf = *cf;
     cf->ctx = ctx;
     cf->cmd_type = NGX_STREAM_UPS_CONF;
@@ -164,7 +159,7 @@ ngx_stream_upstream(ngx_conf_t *cf, ngx_command_t *cmd, void *dummy)
     return rv;
 }
 
-
+/* stream{upstream{server}}解析函数，“server address [parameters];” */
 static char *
 ngx_stream_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -177,11 +172,11 @@ ngx_stream_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_uint_t                     i;
     ngx_stream_upstream_server_t  *us;
 
+    /* 加入解析结果 */
     us = ngx_array_push(uscf->servers);
     if (us == NULL) {
         return NGX_CONF_ERROR;
     }
-
     ngx_memzero(us, sizeof(ngx_stream_upstream_server_t));
 
     value = cf->args->elts;
@@ -189,7 +184,7 @@ ngx_stream_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     weight = 1;
     max_fails = 1;
     fail_timeout = 10;
-
+    /* 解析可选参数 */
     for (i = 2; i < cf->args->nelts; i++) {
 
         if (ngx_strncmp(value[i].data, "weight=", 7) == 0) {
@@ -267,8 +262,8 @@ ngx_stream_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ngx_memzero(&u, sizeof(ngx_url_t));
 
+    /* 解析指定的地址， IP:PORT */
     u.url = value[1];
-
     if (ngx_parse_url(cf->pool, &u) != NGX_OK) {
         if (u.err) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
@@ -277,8 +272,7 @@ ngx_stream_upstream_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
         return NGX_CONF_ERROR;
     }
-
-    if (u.no_port) {
+    if (u.no_port) {   /* 必须指定端口 */
         ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                            "no port in upstream \"%V\"", &u.url);
         return NGX_CONF_ERROR;
@@ -318,6 +312,7 @@ ngx_stream_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
     ngx_stream_upstream_srv_conf_t   *uscf, **uscfp;
     ngx_stream_upstream_main_conf_t  *umcf;
 
+    /* 查找upstream时，先解析url */
     if (!(flags & NGX_STREAM_UPSTREAM_CREATE)) {
 
         if (ngx_parse_url(cf->pool, u) != NGX_OK) {
@@ -330,16 +325,15 @@ ngx_stream_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
         }
     }
 
+    /* 查找是否已经存在对应的upstream */
     umcf = ngx_stream_conf_get_module_main_conf(cf, ngx_stream_upstream_module);
-
     uscfp = umcf->upstreams.elts;
-
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
         if (uscfp[i]->host.len != u->host.len
             || ngx_strncasecmp(uscfp[i]->host.data, u->host.data, u->host.len)
                != 0)
-        {
+        {                 /* 比对名称 */
             continue;
         }
 
@@ -367,7 +361,7 @@ ngx_stream_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
         }
 
         if (uscfp[i]->port != u->port) {
-            continue;
+            continue;     /* 比对端口 */
         }
 
         if (flags & NGX_STREAM_UPSTREAM_CREATE) {
@@ -377,12 +371,13 @@ ngx_stream_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
         return uscfp[i];
     }
 
+    /* 创建 */
     uscf = ngx_pcalloc(cf->pool, sizeof(ngx_stream_upstream_srv_conf_t));
     if (uscf == NULL) {
         return NULL;
     }
 
-    uscf->flags = flags;
+    uscf->flags = flags;        /* 初始化 */
     uscf->host = u->host;
     uscf->file_name = cf->conf_file->file.name.data;
     uscf->line = cf->conf_file->line;
@@ -407,6 +402,7 @@ ngx_stream_upstream_add(ngx_conf_t *cf, ngx_url_t *u, ngx_uint_t flags)
         us->naddrs = 1;
     }
 
+    /* 存储 */
     uscfp = ngx_array_push(&umcf->upstreams);
     if (uscfp == NULL) {
         return NULL;
@@ -450,6 +446,7 @@ ngx_stream_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
 
     uscfp = umcf->upstreams.elts;
 
+    /* 初始化upstream环境 */
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
         init = uscfp[i]->peer.init_upstream

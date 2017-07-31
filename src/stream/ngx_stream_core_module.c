@@ -83,7 +83,7 @@ static ngx_stream_module_t  ngx_stream_core_module_ctx = {
     ngx_stream_core_merge_srv_conf         /* merge server configuration */
 };
 
-
+/* 四层代理核心模块儿 */
 ngx_module_t  ngx_stream_core_module = {
     NGX_MODULE_V1,
     &ngx_stream_core_module_ctx,           /* module context */
@@ -216,7 +216,7 @@ ngx_stream_core_error_log(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return ngx_log_set_log(cf, &cscf->error_log);
 }
 
-
+/* stream{server{}}解析函数 */
 static char *
 ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -229,23 +229,22 @@ ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_stream_core_srv_conf_t   *cscf, **cscfp;
     ngx_stream_core_main_conf_t  *cmcf;
 
+    /* server{}层级分配stream{server{}}配置解析内存 */
     ctx = ngx_pcalloc(cf->pool, sizeof(ngx_stream_conf_ctx_t));
     if (ctx == NULL) {
         return NGX_CONF_ERROR;
     }
-
     stream_ctx = cf->ctx;
-    ctx->main_conf = stream_ctx->main_conf;
+    ctx->main_conf = stream_ctx->main_conf;   /* 主配置回指stream{}层级 */
 
     /* the server{}'s srv_conf */
-
-    ctx->srv_conf = ngx_pcalloc(cf->pool,
+    ctx->srv_conf = ngx_pcalloc(cf->pool,     /* 分配server{}层级指针 */
                                 sizeof(void *) * ngx_stream_max_module);
     if (ctx->srv_conf == NULL) {
         return NGX_CONF_ERROR;
     }
 
-    for (m = 0; cf->cycle->modules[m]; m++) {
+    for (m = 0; cf->cycle->modules[m]; m++) { /* 分配各模块儿server{}层级配置内存 */
         if (cf->cycle->modules[m]->type != NGX_STREAM_MODULE) {
             continue;
         }
@@ -262,8 +261,7 @@ ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
-    /* the server configuration context */
-
+    /* 保存层级结构到顶层core信息结构，the server configuration context */
     cscf = ctx->srv_conf[ngx_stream_core_module.ctx_index];
     cscf->ctx = ctx;
 
@@ -276,9 +274,7 @@ ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     *cscfp = cscf;
 
-
-    /* parse inside server{} */
-
+    /* 继续递归解析，parse inside server{} */
     pcf = *cf;
     cf->ctx = ctx;
     cf->cmd_type = NGX_STREAM_SRV_CONF;
@@ -290,7 +286,10 @@ ngx_stream_core_server(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return rv;
 }
 
-
+/* stream{server{listen}}解析函数，指令格式：
+   listen address:port [ssl] [udp] [proxy_protocol] [backlog=number] [rcvbuf=size] 
+                       [sndbuf=size] [bind] [ipv6only=on|off] [reuseport] 
+                       [so_keepalive=on|off|[keepidle]:[keepintvl]:[keepcnt]];*/
 static char *
 ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -302,11 +301,10 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     value = cf->args->elts;
 
+    /* 解析listen的配置值，url */
     ngx_memzero(&u, sizeof(ngx_url_t));
-
     u.url = value[1];
     u.listen = 1;
-
     if (ngx_parse_url(cf->pool, &u) != NGX_OK) {
         if (u.err) {
             ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
@@ -317,8 +315,8 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return NGX_CONF_ERROR;
     }
 
+    /* 解析结果存放到顶层core信息结构 */
     cmcf = ngx_stream_conf_get_module_main_conf(cf, ngx_stream_core_module);
-
     ls = ngx_array_push(&cmcf->listen);
     if (ls == NULL) {
         return NGX_CONF_ERROR;
@@ -329,10 +327,10 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ngx_memcpy(&ls->sockaddr.sockaddr, &u.sockaddr, u.socklen);
 
     ls->socklen = u.socklen;
-    ls->backlog = NGX_LISTEN_BACKLOG;
-    ls->type = SOCK_STREAM;
+    ls->backlog = NGX_LISTEN_BACKLOG;   /* 默认511 */
+    ls->type = SOCK_STREAM;             /* 默认tcp */
     ls->wildcard = u.wildcard;
-    ls->ctx = cf->ctx;
+    ls->ctx = cf->ctx;                  /* 对应server{}层级的配置，方便查找 */
 
 #if (NGX_HAVE_INET6 && defined IPV6_V6ONLY)
     ls->ipv6only = 1;
@@ -340,6 +338,7 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     backlog = 0;
 
+    /* 解析其他可选参数 */
     for (i = 2; i < cf->args->nelts; i++) {
 
 #if !(NGX_WIN32)
@@ -544,8 +543,8 @@ ngx_stream_core_listen(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         }
     }
 
+    /* 检查配置是否重复 */
     als = cmcf->listen.elts;
-
     for (i = 0; i < cmcf->listen.nelts - 1; i++) {
         if (ls->type != als[i].type) {
             continue;

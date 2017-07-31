@@ -613,7 +613,77 @@ proxy_pass配置解析
    : ~/src/stream/ngx_stream_upstream_hash_module.c
 
 ** 解析流程
+#+BEGIN_EXAMPLE
+-main()
+  -ngx_init_cycle()
+    -ngx_conf_parse()              配置文件解析入口，~/src/core/ngx_conf_file.c
+      -ngx_stream_block()          stream{}解析入口，~/src/stream/ngx_stream.c
+        -ngx_stream_core_server()    stream{server}解析入口, ~/src/stream/ngx_stream_core_module.c
+          -ngx_stream_proxy_pass()   stream{server{proxy_pass}}解析入口, ~/src/stream/ngx_stream_proxy_module.c
+        -ngx_stream_upstream()       stream{upstream}解析入口，~/src/stream/ngx_stream_upstream.c
+        ...
+        -ngx_stream_variables_init_vars()   初始化支持的变量
+        -ngx_stream_add_ports()             以端口为键，重新组织listen解析结构
+        -ngx_stream_optimize_servers()      建立底层监听链路，~/src/stream/ngx_stream.c
+          -ngx_create_listening()           创建监听插口
+          -设定处理监听口句柄->handler      = ngx_stream_init_connection()
+    ...
+    -ngx_open_listening_sockets()  打开所有监听插口
+      -socket()
+      -bind()
+      -listen()
+#+END_EXAMPLE
+
 ** 处理流程
+ACCEPT流程
+#+BEGIN_EXAMPLE
+-for(;;)                          worker处理循环
+  -ngx_process_events_and_timers()
+    -ngx_trylock_accept_mutex()   添加待监控链路到EPOLL系统
+    -ngx_process_events()         处理
+    -ngx_event_process_posted()
+      -ngx_event_accept()                  ~/src/event/ngx_event_accept.c
+        -accept()
+        -ngx_get_connection()
+        -ngx_listening_t->handler()
+        -->ngx_stream_init_connection()    初始化upstream环境，~/src/stream/ngx_stream_handler.c
+          -查找连接的server配置
+          -ngx_pcalloc()                   分配四层流信息结构，ngx_stream_session_t
+          -ngx_stream_core_main_conf_t->limit_conn_handler()
+                                              限制连接数
+          -ngx_stream_core_main_conf_t->access_handler()
+                                              访问控制  
+          -ngx_stream_ssl_init_connection()   SSL链路初始化
+          -ngx_stream_init_session()
+            -ngx_stream_core_srv_conf_t->handler()
+            -->ngx_stream_proxy_handler()     连接后端upstream
+#+END_EXAMPLE
+
+upstream流程
+#+BEGIN_EXAMPLE
+-ngx_stream_proxy_handler()           ~/src/stream/ngx_stream_proxy_module.c
+  -设置downstream处理句柄ngx_connection_t->write/read->handler()
+                                      =ngx_stream_proxy_downstream_handler()
+  -ngx_stream_proxy_connect()
+    -ngx_event_connect_peer()         连接upstream
+      -socket()
+      -connect()
+    -设置upstream连接处理句柄ngx_connection_t->write/read->handler()
+                                      =ngx_stream_proxy_connect_handler()
+      -分配上行缓存
+      -设置upstream上行处理句柄ngx_connection_t->write/read->handler()
+                                      =ngx_stream_proxy_upstream_handler()
+#+END_EXAMPLE
+
+收发报文处理流程
+#+BEGIN_EXAMPLE
+-ngx_stream_proxy_upstream_handler()      ~/src/stream/ngx_stream_proxy_module.c
+-ngx_stream_proxy_downstream_handler()
+  -ngx_stream_proxy_process_connection()  统一入口
+    -ngx_stream_proxy_process()
+      -ngx_connection_t->recv()           接收数据
+      -ngx_connection_t->send()           发送数据
+#+END_EXAMPLE
 
 * TODO load-balance模块儿
 可用称为辅助模块儿，主要为upstream模块儿服务，决定如何从多台后端服务器中

@@ -18,7 +18,7 @@ typedef struct {
 #endif
 } ngx_stream_upstream_local_t;
 
-
+/* 维护proxy信息的结构，即stream{server{proxy_pass}}等配置信息 */
 typedef struct {
     ngx_msec_t                       connect_timeout;
     ngx_msec_t                       timeout;
@@ -30,7 +30,7 @@ typedef struct {
     ngx_uint_t                       next_upstream_tries;
     ngx_flag_t                       next_upstream;
     ngx_flag_t                       proxy_protocol;
-    ngx_stream_upstream_local_t     *local;
+    ngx_stream_upstream_local_t     *local;       /* 维护本地绑定的地址信息 */
 
 #if (NGX_STREAM_SSL)
     ngx_flag_t                       ssl_enable;
@@ -51,7 +51,7 @@ typedef struct {
     ngx_ssl_t                       *ssl;
 #endif
 
-    ngx_stream_upstream_srv_conf_t  *upstream;
+    ngx_stream_upstream_srv_conf_t  *upstream;    /* 对应的upstream */
 } ngx_stream_proxy_srv_conf_t;
 
 
@@ -340,7 +340,7 @@ ngx_module_t  ngx_stream_proxy_module = {
     NGX_MODULE_V1_PADDING
 };
 
-
+/* stream proxy处理入口 */
 static void
 ngx_stream_proxy_handler(ngx_stream_session_t *s)
 {
@@ -356,13 +356,12 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
 
     ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0,
                    "proxy connection handler");
-
+    /* 分配upstream信息，并关联到流表 */
     u = ngx_pcalloc(c->pool, sizeof(ngx_stream_upstream_t));
     if (u == NULL) {
         ngx_stream_proxy_finalize(s, NGX_ERROR);
         return;
     }
-
     s->upstream = u;
 
     s->log_handler = ngx_stream_proxy_log_error;
@@ -370,20 +369,23 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
     u->peer.log = c->log;
     u->peer.log_error = NGX_ERROR_ERR;
 
+    /* 获取需要绑定的本地地址，即upsream链路插口的本地地址 */
     if (ngx_stream_proxy_set_local(s, u, pscf->local) != NGX_OK) {
         ngx_stream_proxy_finalize(s, NGX_ERROR);
         return;
     }
 
+    /* 继承链路的类型，SOCK_STREAM */
     u->peer.type = c->type;
 
+    /* 初始化LB数据区，具体函数参考LB模块儿 */
     uscf = pscf->upstream;
-
     if (uscf->peer.init(s, uscf) != NGX_OK) {
         ngx_stream_proxy_finalize(s, NGX_ERROR);
         return;
     }
 
+    /* 初始化连接时间 */
     u->peer.start_time = ngx_current_msec;
 
     if (pscf->next_upstream_tries
@@ -392,23 +394,26 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
         u->peer.tries = pscf->next_upstream_tries;
     }
 
+    /**/
     u->proxy_protocol = pscf->proxy_protocol;
     u->start_sec = ngx_time();
 
+    /* 设置downstream处理句柄 */
     c->write->handler = ngx_stream_proxy_downstream_handler;
     c->read->handler = ngx_stream_proxy_downstream_handler;
 
+    /* UDP代理，直接连接 */
     if (c->type == SOCK_DGRAM) {
         ngx_stream_proxy_connect(s);
         return;
     }
 
+    /* 分配下行缓存 */
     p = ngx_pnalloc(c->pool, pscf->buffer_size);
     if (p == NULL) {
         ngx_stream_proxy_finalize(s, NGX_ERROR);
         return;
     }
-
     u->downstream_buf.start = p;
     u->downstream_buf.end = p + pscf->buffer_size;
     u->downstream_buf.pos = p;
@@ -440,6 +445,7 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
         ngx_post_event(c->read, &ngx_posted_events);
     }
 
+    /* 连接upstream服务器 */
     ngx_stream_proxy_connect(s);
 }
 
@@ -496,7 +502,7 @@ ngx_stream_proxy_set_local(ngx_stream_session_t *s, ngx_stream_upstream_t *u,
     return NGX_OK;
 }
 
-
+/* 连接上行服务器 */
 static void
 ngx_stream_proxy_connect(ngx_stream_session_t *s)
 {
@@ -511,6 +517,7 @@ ngx_stream_proxy_connect(ngx_stream_session_t *s)
 
     u = s->upstream;
 
+    /* 连接upstream服务器 */
     rc = ngx_event_connect_peer(&u->peer);
 
     ngx_log_debug1(NGX_LOG_DEBUG_STREAM, c->log, 0, "proxy connect: %i", rc);
@@ -546,11 +553,12 @@ ngx_stream_proxy_connect(ngx_stream_session_t *s)
         return;
     }
 
+    /* 设置upstream连接处理句柄 */
     pc->read->handler = ngx_stream_proxy_connect_handler;
     pc->write->handler = ngx_stream_proxy_connect_handler;
 
     pscf = ngx_stream_get_module_srv_conf(s, ngx_stream_proxy_module);
-
+    /* 启动连接超时定时器 */
     ngx_add_timer(pc->write, pscf->connect_timeout);
 }
 
@@ -601,6 +609,7 @@ ngx_stream_proxy_init_upstream(ngx_stream_session_t *s)
 
     pscf = ngx_stream_get_module_srv_conf(s, ngx_stream_proxy_module);
 
+    /* SSL处理 */
 #if (NGX_STREAM_SSL)
     if (pc->type == SOCK_STREAM && pscf->ssl && pc->ssl == NULL) {
         ngx_stream_proxy_ssl_init_connection(s);
@@ -632,6 +641,7 @@ ngx_stream_proxy_init_upstream(ngx_stream_session_t *s)
 
     c->log->action = "proxying connection";
 
+    /* 分配上行缓存 */
     if (u->upstream_buf.start == NULL) {
         p = ngx_pnalloc(c->pool, pscf->buffer_size);
         if (p == NULL) {
@@ -657,6 +667,7 @@ ngx_stream_proxy_init_upstream(ngx_stream_session_t *s)
 
     u->connected = 1;
 
+    /* 设置upstream处理句柄 */
     pc->read->handler = ngx_stream_proxy_upstream_handler;
     pc->write->handler = ngx_stream_proxy_upstream_handler;
 
@@ -664,6 +675,7 @@ ngx_stream_proxy_init_upstream(ngx_stream_session_t *s)
         ngx_post_event(pc->read, &ngx_posted_events);
     }
 
+    /* */
     ngx_stream_proxy_process(s, 0, 1);
 }
 
@@ -967,14 +979,14 @@ done:
 
 #endif
 
-
+/* 下行处理句柄 */
 static void
 ngx_stream_proxy_downstream_handler(ngx_event_t *ev)
 {
     ngx_stream_proxy_process_connection(ev, ev->write);
 }
 
-
+/* 上行处理句柄 */
 static void
 ngx_stream_proxy_upstream_handler(ngx_event_t *ev)
 {
@@ -1064,7 +1076,7 @@ ngx_stream_proxy_process_connection(ngx_event_t *ev, ngx_uint_t from_upstream)
     ngx_stream_proxy_process(s, from_upstream, ev->write);
 }
 
-
+/* upstream的connect()处理函数 */
 static void
 ngx_stream_proxy_connect_handler(ngx_event_t *ev)
 {
@@ -1079,7 +1091,7 @@ ngx_stream_proxy_connect_handler(ngx_event_t *ev)
         ngx_stream_proxy_next_upstream(s);
         return;
     }
-
+    /* 删除定时器 */
     ngx_del_timer(c->write);
 
     ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0,
@@ -1089,7 +1101,7 @@ ngx_stream_proxy_connect_handler(ngx_event_t *ev)
         ngx_stream_proxy_next_upstream(s);
         return;
     }
-
+    /* 初始化upstream连接 */
     ngx_stream_proxy_init_upstream(s);
 }
 
@@ -1659,7 +1671,7 @@ ngx_stream_proxy_set_ssl(ngx_conf_t *cf, ngx_stream_proxy_srv_conf_t *pscf)
 
 #endif
 
-
+/* stream{server{proxy_pass}}处理函数 */
 static char *
 ngx_stream_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -1673,8 +1685,8 @@ ngx_stream_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
         return "is duplicate";
     }
 
+    /* 设置处理句柄 */
     cscf = ngx_stream_conf_get_module_srv_conf(cf, ngx_stream_core_module);
-
     cscf->handler = ngx_stream_proxy_handler;
 
     value = cf->args->elts;
@@ -1683,9 +1695,9 @@ ngx_stream_proxy_pass(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     ngx_memzero(&u, sizeof(ngx_url_t));
 
+    /* 查找对应的upstream */
     u.url = *url;
     u.no_resolve = 1;
-
     pscf->upstream = ngx_stream_upstream_add(cf, &u, 0);
     if (pscf->upstream == NULL) {
         return NGX_CONF_ERROR;

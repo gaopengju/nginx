@@ -34,13 +34,15 @@ struct ngx_listening_s {
     int                 keepcnt;
 #endif
 
-    ngx_connection_handler_pt   handler; /* 插口处理句柄ngx_http_init_connection() */
+    ngx_connection_handler_pt   handler; /* 七层http: ngx_http_init_connection()
+                                            四层stream: ngx_stream_init_connection() */
 
-    void               *servers;         /* ngx_http_port_t数组，此链路对应的server；
+    void               *servers;         /* http: ngx_http_port_t, 此链路对应的server；
                                             有可能一条链路对应多个server{}配置，如果
                                             一个server{listen 80;}，另一个server{
-                                            listen 1.1.1.1:80;}，则只建立监听链路
-                                            *:80 */
+                                            listen 1.1.1.1:80;}，则只建立监听链路*:80
+
+                                            stream: ngx_stream_port_t */
     ngx_log_t           log;
     ngx_log_t          *logp;
 
@@ -126,10 +128,14 @@ typedef enum {
 
 
 struct ngx_connection_s {
-    void               *data;   /* 空闲时, 作为单链表指针的next;
+    void               *data; /* 七层代理：
+                                   空闲时, 作为单链表指针的next;
                                    建立链接后, 指向具体协议连接信息, ngx_http_connection_t
                                    接收到数据解析处理请求时, 指向请求信息结构 ngx_http_request_t
                                    向upstream发起请求连接后，发送请求前，指向 ngx_http_request_t
+
+                                 四层代理：
+                                   accept后, struct ngx_stream_session_s
                                  */
     ngx_event_t        *read;   /* 读事件，对应ngx_cycle->read_events[] */
     ngx_event_t        *write;  /* 写事件，对应ngx_cycle->write_events[] 

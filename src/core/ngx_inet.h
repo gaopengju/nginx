@@ -79,25 +79,25 @@ typedef struct {
 
 typedef struct {
     ngx_str_t                 url;
-    ngx_str_t                 host;
+    ngx_str_t                 host;             /* 主机名 */
     ngx_str_t                 port_text;
     ngx_str_t                 uri;
 
-    in_port_t                 port;
+    in_port_t                 port;             /* 端口 */
     in_port_t                 default_port;
-    int                       family;
+    int                       family;           /* 协议族 */
 
-    unsigned                  listen:1;
+    unsigned                  listen:1;         /* 0/1, 是否listen配置指令 */
     unsigned                  uri_part:1;
     unsigned                  no_resolve:1;
 
     unsigned                  no_port:1;
     unsigned                  wildcard:1;
 
-    socklen_t                 socklen;
+    socklen_t                 socklen;          /* 对应addrs[0] */
     ngx_sockaddr_t            sockaddr;
 
-    ngx_addr_t               *addrs;
+    ngx_addr_t               *addrs;            /* 域名解析后对应的IP地址 */
     ngx_uint_t                naddrs;
 
     char                     *err;

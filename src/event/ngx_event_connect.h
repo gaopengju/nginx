@@ -53,7 +53,7 @@ struct ngx_peer_connection_s {
     ngx_event_save_peer_session_pt   save_session;
 #endif
 
-    ngx_addr_t                      *local;
+    ngx_addr_t                      *local;         /* 绑定的本地地址 */
 
     int                              type;          /* 连接类型，SOCK_STREAM */
     int                              rcvbuf;

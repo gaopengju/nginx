@@ -862,6 +862,7 @@ ngx_stream_variables_add_core_vars(ngx_conf_t *cf)
         return NGX_ERROR;
     }
 
+    /* 注册变量 */
     for (cv = ngx_stream_core_variables; cv->name.len; cv++) {
         v = ngx_palloc(cf->pool, sizeof(ngx_stream_variable_t));
         if (v == NULL) {

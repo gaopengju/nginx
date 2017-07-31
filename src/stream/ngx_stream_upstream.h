@@ -22,10 +22,9 @@
 #define NGX_STREAM_UPSTREAM_DOWN          0x0010
 #define NGX_STREAM_UPSTREAM_BACKUP        0x0020
 
-
+/* stream{}层级，所有stream{upstream}配置解析结果 */
 typedef struct {
-    ngx_array_t                        upstreams;
-                                           /* ngx_stream_upstream_srv_conf_t */
+    ngx_array_t   upstreams;            /* ngx_stream_upstream_srv_conf_t */
 } ngx_stream_upstream_main_conf_t;
 
 
@@ -44,52 +43,51 @@ typedef struct {
     void                              *data;
 } ngx_stream_upstream_peer_t;
 
-
+/* 对应stream{upstream{server}}配置解析结果 */
 typedef struct {
-    ngx_str_t                          name;
-    ngx_addr_t                        *addrs;
-    ngx_uint_t                         naddrs;
-    ngx_uint_t                         weight;
-    ngx_uint_t                         max_fails;
-    time_t                             fail_timeout;
+    ngx_str_t   name;         /* IP或域名 */
+    ngx_addr_t  *addrs;       /* 域名对应的IP */
+    ngx_uint_t  naddrs;
+    ngx_uint_t  weight;       /* 权重 */
+    ngx_uint_t  max_fails;
+    time_t      fail_timeout;
 
-    unsigned                           down:1;
-    unsigned                           backup:1;
+    unsigned    down:1;       /* 服务器是否关闭状态 */
+    unsigned    backup:1;     /* 是否为后备服务器 */
 } ngx_stream_upstream_server_t;
 
-
+/* 对应stream{upstream}配置解析结果 */
 struct ngx_stream_upstream_srv_conf_s {
     ngx_stream_upstream_peer_t         peer;
-    void                             **srv_conf;
+    void  **srv_conf;     /* server上下文环境 */
 
-    ngx_array_t                       *servers;
-                                              /* ngx_stream_upstream_server_t */
+    ngx_array_t *servers; /* 存放server配置指令解析结果, ngx_stream_upstream_server_t */
 
     ngx_uint_t                         flags;
-    ngx_str_t                          host;
+    ngx_str_t                          host;  /* 名 */
     u_char                            *file_name;
     ngx_uint_t                         line;
-    in_port_t                          port;
-    ngx_uint_t                         no_port;  /* unsigned no_port:1 */
+    in_port_t                          port;  /* 端口 */
+    ngx_uint_t                         no_port;  /* 1, unsigned no_port:1 */
 
 #if (NGX_STREAM_UPSTREAM_ZONE)
     ngx_shm_zone_t                    *shm_zone;
 #endif
 };
 
-
+/* 维护stream的upstream信息 */
 typedef struct {
-    ngx_peer_connection_t              peer;
-    ngx_buf_t                          downstream_buf;
-    ngx_buf_t                          upstream_buf;
-    off_t                              received;
-    time_t                             start_sec;
-    ngx_uint_t                         responses;
+    ngx_peer_connection_t peer;   /* 维护对端服务器链路信息 */
+    ngx_buf_t  downstream_buf;    /* 下行缓存 */
+    ngx_buf_t  upstream_buf;      /* 上行缓存 */
+    off_t      received;
+    time_t     start_sec;         /* 开始时间 */
+    ngx_uint_t responses;
 #if (NGX_STREAM_SSL)
-    ngx_str_t                          ssl_name;
+    ngx_str_t  ssl_name;
 #endif
-    unsigned                           connected:1;
-    unsigned                           proxy_protocol:1;
+    unsigned   connected:1;
+    unsigned   proxy_protocol:1;  /* */
 } ngx_stream_upstream_t;
 
 
