@@ -26,7 +26,7 @@ static void ngx_stream_upstream_save_round_robin_peer_session(
 
 #endif
 
-
+/* RR初始化LB环境所需数据 */
 ngx_int_t
 ngx_stream_upstream_init_round_robin(ngx_conf_t *cf,
     ngx_stream_upstream_srv_conf_t *us)
@@ -37,8 +37,10 @@ ngx_stream_upstream_init_round_robin(ngx_conf_t *cf,
     ngx_stream_upstream_rr_peer_t   *peer, **peerp;
     ngx_stream_upstream_rr_peers_t  *peers, *backup;
 
+    /* 赋值rr环境初始化函数 */
     us->peer.init = ngx_stream_upstream_init_round_robin_peer;
 
+    /* 计算加权重，并依据具体配置初始化 */
     if (us->servers) {
         server = us->servers->elts;
 
@@ -80,6 +82,7 @@ ngx_stream_upstream_init_round_robin(ngx_conf_t *cf,
         n = 0;
         peerp = &peers->peer;
 
+        /* 各服务器初始化 */
         for (i = 0; i < us->servers->nelts; i++) {
             if (server[i].backup) {
                 continue;
@@ -105,8 +108,7 @@ ngx_stream_upstream_init_round_robin(ngx_conf_t *cf,
 
         us->peer.data = peers;
 
-        /* backup servers */
-
+        /* 后备服务器初始化，backup servers */
         n = 0;
         w = 0;
 
@@ -165,15 +167,15 @@ ngx_stream_upstream_init_round_robin(ngx_conf_t *cf,
                 n++;
             }
         }
-
+        /* 关联当前配置，插入同一链表 */
         peers->next = backup;
 
         return NGX_OK;
     }
 
 
-    /* an upstream implicitly defined by proxy_pass, etc. */
-
+    /* "proxy_pass ip:port"直接指定配置，没有单独的upstream{}
+       an upstream implicitly defined by proxy_pass, etc. */
     if (us->port == 0) {
         ngx_log_error(NGX_LOG_EMERG, cf->log, 0,
                       "no port in upstream \"%V\" in %s:%ui",
@@ -236,7 +238,7 @@ ngx_stream_upstream_init_round_robin(ngx_conf_t *cf,
     return NGX_OK;
 }
 
-
+/* RR初始化当前会话LB工作状态 */
 ngx_int_t
 ngx_stream_upstream_init_round_robin_peer(ngx_stream_session_t *s,
     ngx_stream_upstream_srv_conf_t *us)
@@ -244,8 +246,8 @@ ngx_stream_upstream_init_round_robin_peer(ngx_stream_session_t *s,
     ngx_uint_t                           n;
     ngx_stream_upstream_rr_peer_data_t  *rrp;
 
+    /* 分配LB工作状态数据 */
     rrp = s->upstream->peer.data;
-
     if (rrp == NULL) {
         rrp = ngx_palloc(s->connection->pool,
                          sizeof(ngx_stream_upstream_rr_peer_data_t));
@@ -256,11 +258,12 @@ ngx_stream_upstream_init_round_robin_peer(ngx_stream_session_t *s,
         s->upstream->peer.data = rrp;
     }
 
+    /* 关联LB环境 */
     rrp->peers = us->peer.data;
     rrp->current = NULL;
 
+    /* 尝试位掩码表 */
     n = rrp->peers->number;
-
     if (rrp->peers->next && rrp->peers->next->number > n) {
         n = rrp->peers->next->number;
     }
@@ -278,6 +281,7 @@ ngx_stream_upstream_init_round_robin_peer(ngx_stream_session_t *s,
         }
     }
 
+    /* 获取函数 */
     s->upstream->peer.get = ngx_stream_upstream_get_round_robin_peer;
     s->upstream->peer.free = ngx_stream_upstream_free_round_robin_peer;
     s->upstream->peer.tries = ngx_stream_upstream_tries(rrp->peers);
@@ -291,7 +295,7 @@ ngx_stream_upstream_init_round_robin_peer(ngx_stream_session_t *s,
     return NGX_OK;
 }
 
-
+/* 四层代理，RR获取服务器 */
 ngx_int_t
 ngx_stream_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
 {
@@ -310,6 +314,7 @@ ngx_stream_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
     peers = rrp->peers;
     ngx_stream_upstream_rr_peers_wlock(peers);
 
+    /* 获取最优服务器 */
     if (peers->single) {
         peer = peers->peer;
 
@@ -321,8 +326,7 @@ ngx_stream_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
 
     } else {
 
-        /* there are several peers */
-
+        /* RR加权算法，there are several peers */
         peer = ngx_stream_upstream_get_peer(rrp);
 
         if (peer == NULL) {
@@ -334,10 +338,12 @@ ngx_stream_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
                        peer, peer->current_weight);
     }
 
+    /* 记录选择的服务器 */
     pc->sockaddr = peer->sockaddr;
     pc->socklen = peer->socklen;
     pc->name = &peer->name;
 
+    /* 链路计数 */
     peer->conns++;
 
     ngx_stream_upstream_rr_peers_unlock(peers);

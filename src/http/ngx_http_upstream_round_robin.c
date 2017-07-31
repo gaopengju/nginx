@@ -244,8 +244,8 @@ ngx_http_upstream_init_round_robin_peer(ngx_http_request_t *r,
     ngx_uint_t                         n;
     ngx_http_upstream_rr_peer_data_t  *rrp;
 
+    /* 分配LB状态数据内存 */
     rrp = r->upstream->peer.data;
-
     if (rrp == NULL) {
         rrp = ngx_palloc(r->pool, sizeof(ngx_http_upstream_rr_peer_data_t));
         if (rrp == NULL) {
@@ -277,6 +277,7 @@ ngx_http_upstream_init_round_robin_peer(ngx_http_request_t *r,
         }
     }
 
+    /* 设定处理函数 */
     r->upstream->peer.get = ngx_http_upstream_get_round_robin_peer;
     r->upstream->peer.free = ngx_http_upstream_free_round_robin_peer;
     r->upstream->peer.tries = ngx_http_upstream_tries(rrp->peers);
@@ -405,7 +406,16 @@ ngx_http_upstream_create_round_robin_peer(ngx_http_request_t *r,
     return NGX_OK;
 }
 
-
+/*
+@note: 算法思维
+  1) nginx启动初始化->current_weight为0
+  2) 每次选择时，->current_weight += ->effective_weight
+  3) 选择->current_weight值最大的为best
+  4) 选中后的best->current_weight值变更为 -sum(->effective_weight)
+  5) 下次选择，迭代2~4步骤
+  6) 当后端服务器异常时，->effective_weight会被调低; 当服务正常后，
+     逐步恢复(对应代码->effective_weight++)
+*/
 ngx_int_t
 ngx_http_upstream_get_round_robin_peer(ngx_peer_connection_t *pc, void *data)
 {

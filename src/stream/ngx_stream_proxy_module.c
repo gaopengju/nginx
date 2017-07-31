@@ -378,7 +378,9 @@ ngx_stream_proxy_handler(ngx_stream_session_t *s)
     /* 继承链路的类型，SOCK_STREAM */
     u->peer.type = c->type;
 
-    /* 初始化LB数据区，具体函数参考LB模块儿 */
+    /* 初始化LB数据区，具体函数参考LB模块儿
+       RR: ngx_stream_upstream_init_round_robin_peer() 
+       hash: ngx_stream_upstream_init_hash_peer() */
     uscf = pscf->upstream;
     if (uscf->peer.init(s, uscf) != NGX_OK) {
         ngx_stream_proxy_finalize(s, NGX_ERROR);

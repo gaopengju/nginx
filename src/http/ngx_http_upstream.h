@@ -84,27 +84,32 @@ typedef ngx_int_t (*ngx_http_upstream_init_peer_pt)(ngx_http_request_t *r,
 
 /* 承载upstream{ip_hash;}等配置信息，构建LB负载 */
 typedef struct {
-    ngx_http_upstream_init_pt        init_upstream;  /* ip_hash: ngx_http_upstream_init_ip_hash()
+    ngx_http_upstream_init_pt        init_upstream;  /* LB策略环境初始化函数, 分配内存等
+                                                        ip_hash: ngx_http_upstream_init_ip_hash()
                                                         upstream{keepalive}: ngx_http_upstream_init_keepalive()
                                                       */
-    ngx_http_upstream_init_peer_pt   init;           /* ip_hash: ngx_http_upstream_init_ip_hash_peer()
+    ngx_http_upstream_init_peer_pt   init;           /* 处理客户请求前调用, 初始化LB计算环境
+                                                        ip_hash: ngx_http_upstream_init_ip_hash_peer()
                                                         upstream{keepalive}: ngx_http_upstream_init_keepalive_peer()
                                                       */
-    void                            *data;
+    void                            *data;           /* LB策略需要的信息
+                                                        RR: ngx_http_upstream_rr_peers_t */
 } ngx_http_upstream_peer_t;
 
 /* 承载upstream{server xxx;}配置指令的解析结果，存储
    在 struct ngx_http_upstream_srv_conf_s->servers[] */
 typedef struct {
-    ngx_str_t                        name;
-    ngx_addr_t                      *addrs;
+    ngx_str_t                        name;         /* 原始配置中, "域名:port"/"ip:port" */
+    ngx_addr_t                      *addrs;        /* 服务器对应的地址 */
     ngx_uint_t                       naddrs;
-    ngx_uint_t                       weight;
-    ngx_uint_t                       max_fails;
-    time_t                           fail_timeout;
+    ngx_uint_t                       weight;       /* 权重, 默认值1 */
+    ngx_uint_t                       max_fails;    /* 参考时间内允许的最大失败次数, 默认值1 */
+    time_t                           fail_timeout; /* 参考时间, 默认值10 */
 
-    unsigned                         down:1;
-    unsigned                         backup:1;
+    unsigned                         down:1;       /* 是否为备用设备?(一般不处理用户请求, 
+                                                      当所有非备机不能提供服务时，才
+                                                      启用) */
+    unsigned                         backup:1;     /* 是否宕机? */
 } ngx_http_upstream_server_t;
 
 
@@ -126,9 +131,9 @@ struct ngx_http_upstream_srv_conf_s {
     ngx_str_t                        host;     /* 对应upstream的name */
     u_char                          *file_name;
     ngx_uint_t                       line;
-    in_port_t                        port;     /* */
+    in_port_t                        port;     /* =0 */
     in_port_t                        default_port;
-    ngx_uint_t                       no_port;  /* unsigned no_port:1 */
+    ngx_uint_t                       no_port;  /* =1, unsigned no_port:1 */
 
 #if (NGX_HTTP_UPSTREAM_ZONE)
     ngx_shm_zone_t                  *shm_zone;

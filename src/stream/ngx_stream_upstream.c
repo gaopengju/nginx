@@ -452,7 +452,8 @@ ngx_stream_upstream_init_main_conf(ngx_conf_t *cf, void *conf)
         init = uscfp[i]->peer.init_upstream
                                          ? uscfp[i]->peer.init_upstream
                                          : ngx_stream_upstream_init_round_robin;
-
+        /* hash: ngx_stream_upstream_init_hash() 
+           RR: ngx_stream_upstream_init_round_robin() */
         if (init(cf, uscfp[i]) != NGX_OK) {
             return NGX_CONF_ERROR;
         }

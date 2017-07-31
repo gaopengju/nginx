@@ -39,8 +39,16 @@ typedef ngx_int_t (*ngx_stream_upstream_init_peer_pt)(ngx_stream_session_t *s,
 
 typedef struct {
     ngx_stream_upstream_init_pt        init_upstream;
-    ngx_stream_upstream_init_peer_pt   init;
-    void                              *data;
+                                            /* 初始化LB环境
+                                                RR: ngx_stream_upstream_init_round_robin()
+                                                hash: ngx_stream_upstream_init_hash() */
+    ngx_stream_upstream_init_peer_pt   init;/* 初始化LB工作环境
+                                                rr: ngx_stream_upstream_init_round_robin_peer()
+                                                hash: ngx_stream_upstream_init_hash_peer()
+                                             */
+    void                              *data;/* LB工作所需数据
+                                                rr: ngx_stream_upstream_rr_peers_t
+                                             */
 } ngx_stream_upstream_peer_t;
 
 /* 对应stream{upstream{server}}配置解析结果 */
@@ -53,7 +61,11 @@ typedef struct {
     time_t      fail_timeout;
 
     unsigned    down:1;       /* 服务器是否关闭状态 */
-    unsigned    backup:1;     /* 是否为后备服务器 */
+    unsigned    backup:1;     /* 是否为后备服务器
+
+                                 备机，平常不被选择；当其他所有非备机全部不可
+                                 用时才被使用此选项不用于ip_hash策略，会扰乱
+                                 hash的结构 */
 } ngx_stream_upstream_server_t;
 
 /* 对应stream{upstream}配置解析结果 */

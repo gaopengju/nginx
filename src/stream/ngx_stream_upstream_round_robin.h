@@ -13,33 +13,32 @@
 #include <ngx_core.h>
 #include <ngx_stream.h>
 
-
+/* 单个PEER服务器信息 */
 typedef struct ngx_stream_upstream_rr_peer_s   ngx_stream_upstream_rr_peer_t;
-
 struct ngx_stream_upstream_rr_peer_s {
-    struct sockaddr                 *sockaddr;
-    socklen_t                        socklen;
-    ngx_str_t                        name;
-    ngx_str_t                        server;
+    struct sockaddr *sockaddr;        /* 服务器地址 */
+    socklen_t       socklen;
+    ngx_str_t       name;             /* IP文本 */
+    ngx_str_t       server;           /* 服务器域名 */
 
-    ngx_int_t                        current_weight;
-    ngx_int_t                        effective_weight;
-    ngx_int_t                        weight;
+    ngx_int_t       current_weight;
+    ngx_int_t       effective_weight;
+    ngx_int_t       weight;           /* 配置权重 */
 
-    ngx_uint_t                       conns;
+    ngx_uint_t      conns;            /* 链路计数 */
 
-    ngx_uint_t                       fails;
-    time_t                           accessed;
-    time_t                           checked;
+    ngx_uint_t      fails;
+    time_t          accessed;
+    time_t          checked;
 
-    ngx_uint_t                       max_fails;
-    time_t                           fail_timeout;
+    ngx_uint_t      max_fails;        /* 配置 */
+    time_t          fail_timeout;
 
-    ngx_uint_t                       down;         /* unsigned  down:1; */
+    ngx_uint_t      down;         /* unsigned  down:1; */
 
 #if (NGX_STREAM_SSL)
-    void                            *ssl_session;
-    int                              ssl_session_len;
+    void            *ssl_session;
+    int             ssl_session_len;
 #endif
 
     ngx_stream_upstream_rr_peer_t   *next;
@@ -49,11 +48,10 @@ struct ngx_stream_upstream_rr_peer_s {
 #endif
 };
 
-
+/* 加权RR数据结构 */
 typedef struct ngx_stream_upstream_rr_peers_s  ngx_stream_upstream_rr_peers_t;
-
 struct ngx_stream_upstream_rr_peers_s {
-    ngx_uint_t                       number;
+    ngx_uint_t                       number;       /* 服务器数量 */
 
 #if (NGX_STREAM_UPSTREAM_ZONE)
     ngx_slab_pool_t                 *shpool;
@@ -61,16 +59,16 @@ struct ngx_stream_upstream_rr_peers_s {
     ngx_stream_upstream_rr_peers_t  *zone_next;
 #endif
 
-    ngx_uint_t                       total_weight;
+    ngx_uint_t                       total_weight; /* 总权重 */
 
-    unsigned                         single:1;
-    unsigned                         weighted:1;
+    unsigned                         single:1;     /* 0/1, 是否仅有一台服务器 */
+    unsigned                         weighted:1;   /* 0/1, 是否为加权RR */
 
-    ngx_str_t                       *name;
+    ngx_str_t                       *name;         /* ngx_stream_upstream_srv_conf_t->host */
 
-    ngx_stream_upstream_rr_peers_t  *next;
+    ngx_stream_upstream_rr_peers_t  *next;         /* backup服务器配置信息，数据结构和当前一致 */
 
-    ngx_stream_upstream_rr_peer_t   *peer;
+    ngx_stream_upstream_rr_peer_t   *peer;         /* 各服务器配置数组 */
 };
 
 
@@ -119,10 +117,11 @@ struct ngx_stream_upstream_rr_peers_s {
 
 
 typedef struct {
-    ngx_stream_upstream_rr_peers_t  *peers;
-    ngx_stream_upstream_rr_peer_t   *current;
-    uintptr_t                       *tried;
-    uintptr_t                        data;
+    ngx_stream_upstream_rr_peers_t  *peers;    /* 关联LB配置数据, 
+                                                  ngx_stream_upstream_srv_conf_t->peer.data */
+    ngx_stream_upstream_rr_peer_t   *current;  /*  */
+    uintptr_t                       *tried;    /* 服务器数量较多时：维护尝试状态位表 */
+    uintptr_t                        data;     /* 服务器数量较少时：维护尝试状态位表 */
 } ngx_stream_upstream_rr_peer_data_t;
 
 

@@ -31,6 +31,13 @@ ngx_event_connect_peer(ngx_peer_connection_t *pc)
     ngx_event_t       *rev, *wev;
     ngx_connection_t  *c;
 
+    /* 七层负载均衡，获取需连接的对端服务器地址
+         ip_hash: ngx_http_upstream_get_ip_hash_peer()
+         rr: ngx_http_upstream_get_round_robin_peer() 
+       四层负载
+         rr: ngx_stream_upstream_get_round_robin_peer()
+         hash: ngx_stream_upstream_get_hash_peer()
+     */
     rc = pc->get(pc, pc->data);
     if (rc != NGX_OK) {
         return rc;

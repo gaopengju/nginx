@@ -30,13 +30,13 @@ typedef struct {
 
 typedef struct {
     /* the round robin data must be first */
-    ngx_stream_upstream_rr_peer_data_t    rrp;
-    ngx_stream_upstream_hash_srv_conf_t  *conf;
-    ngx_str_t                             key;
+    ngx_stream_upstream_rr_peer_data_t    rrp;     /* 状态数据区 */
+    ngx_stream_upstream_hash_srv_conf_t  *conf;    /* 对应的配置 */
+    ngx_str_t                             key;     /* hash的key变量表达式 */
     ngx_uint_t                            tries;
     ngx_uint_t                            rehash;
     uint32_t                              hash;
-    ngx_event_get_peer_pt                 get_rr_peer;
+    ngx_event_get_peer_pt get_rr_peer; /* ngx_stream_upstream_get_round_robin_peer() */
 } ngx_stream_upstream_hash_peer_data_t;
 
 
@@ -104,6 +104,7 @@ ngx_module_t  ngx_stream_upstream_hash_module = {
 };
 
 
+/* hash的LB环境初始化 */
 static ngx_int_t
 ngx_stream_upstream_init_hash(ngx_conf_t *cf,
     ngx_stream_upstream_srv_conf_t *us)
@@ -125,23 +126,26 @@ ngx_stream_upstream_init_hash_peer(ngx_stream_session_t *s,
     ngx_stream_upstream_hash_srv_conf_t   *hcf;
     ngx_stream_upstream_hash_peer_data_t  *hp;
 
+    /* 分配状态数据区 */
     hp = ngx_palloc(s->connection->pool,
                     sizeof(ngx_stream_upstream_hash_peer_data_t));
     if (hp == NULL) {
         return NGX_ERROR;
     }
-
+    /* 关联 */
     s->upstream->peer.data = &hp->rrp;
 
+    /* 初始化数据区 */
     if (ngx_stream_upstream_init_round_robin_peer(s, us) != NGX_OK) {
         return NGX_ERROR;
     }
 
+    /* 获取服务器的函数 */
     s->upstream->peer.get = ngx_stream_upstream_get_hash_peer;
 
+    /* 初始化hash变量表达式 */
     hcf = ngx_stream_conf_upstream_srv_conf(us,
                                             ngx_stream_upstream_hash_module);
-
     if (ngx_stream_complex_value(s, &hcf->key, &hp->key) != NGX_OK) {
         return NGX_ERROR;
     }
@@ -149,7 +153,7 @@ ngx_stream_upstream_init_hash_peer(ngx_stream_session_t *s,
     ngx_log_debug1(NGX_LOG_DEBUG_STREAM, s->connection->log, 0,
                    "upstream hash key:\"%V\"", &hp->key);
 
-    hp->conf = hcf;
+    hp->conf = hcf;    /* 关联stream{upstream{hash}}指令配置 */
     hp->tries = 0;
     hp->rehash = 0;
     hp->hash = 0;
@@ -178,6 +182,7 @@ ngx_stream_upstream_get_hash_peer(ngx_peer_connection_t *pc, void *data)
 
     ngx_stream_upstream_rr_peers_wlock(hp->rrp.peers);
 
+    /* 退化为RR */
     if (hp->tries > 20 || hp->rrp.peers->single) {
         ngx_stream_upstream_rr_peers_unlock(hp->rrp.peers);
         return hp->get_rr_peer(pc, &hp->rrp);

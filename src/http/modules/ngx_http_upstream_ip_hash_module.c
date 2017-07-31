@@ -12,16 +12,16 @@
 
 typedef struct {
     /* the round robin data must be first */
-    ngx_http_upstream_rr_peer_data_t   rrp;
+    ngx_http_upstream_rr_peer_data_t   rrp;   /* RR状态结构 */
 
-    ngx_uint_t                         hash;
+    ngx_uint_t hash;       /* hash种子值，初始化为89 */
 
-    u_char                             addrlen;
-    u_char                            *addr;
+    u_char     addrlen;
+    u_char     *addr;      /* 请求对应的源IP地址 */
 
-    u_char                             tries;
+    u_char     tries;      /* 重试次数 */
 
-    ngx_event_get_peer_pt              get_rr_peer;
+    ngx_event_get_peer_pt get_rr_peer; /* IP_HASH算法失效后，利用rr算法获取对应的服务器 */
 } ngx_http_upstream_ip_hash_peer_data_t;
 
 
@@ -144,7 +144,22 @@ ngx_http_upstream_init_ip_hash_peer(ngx_http_request_t *r,
     return NGX_OK;
 }
 
-
+/*
+@note: 算法思想
+  1) 初始化时初始化hash种子值
+  2) 重试次数超过20次, 或只有一台服务器, 自动退化为rr算法
+  3) 利用源IP计算hash值
+  4) 选择服务器数组索引
+  5) 如果服务器不满足要求, 则重复2~4
+  6) 刷新hash种子值, 及已尝试服务器位图
+@note: 选择服务器数组索引
+  计算hash值后，如果未配置服务器权重，则直接利用此hash值对数组大小
+  求余，对应的值即为所求的服务器索引；如果配置了权重，则利用此hash
+  值对权重和求余，然后遍历服务器数组，直到遍历的权重和>=余数(实质
+  上就是hash值在整个权重数组上展开)
+@note:
+  资源释放函数，同rr算法
+*/
 static ngx_int_t
 ngx_http_upstream_get_ip_hash_peer(ngx_peer_connection_t *pc, void *data)
 {
