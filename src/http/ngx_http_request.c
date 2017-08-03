@@ -432,7 +432,7 @@ ngx_http_wait_request_handler(ngx_event_t *rev)
         b->end = b->last + size;
     }
 
-    /* 接收数据 */
+    /* 接收数据, SSL: ngx_ssl_recv() */
     n = c->recv(c, b->last, size);
     if (n == NGX_AGAIN) {
         if (!rev->timer_set) {
@@ -1875,7 +1875,7 @@ ngx_http_process_request(ngx_http_request_t *r)
     c = r->connection;
 
 #if (NGX_HTTP_SSL)
-
+    /* 检查认证服务器的结果 */
     if (r->http_connection->ssl) {
         long                      rc;
         X509                     *cert;

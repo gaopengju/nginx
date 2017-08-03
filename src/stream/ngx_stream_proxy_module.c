@@ -876,7 +876,7 @@ ngx_stream_proxy_ssl_handshake(ngx_connection_t *pc)
             ngx_del_timer(pc->write);
         }
         
-        /* */
+        /* 设置报文处理句柄 */
         ngx_stream_proxy_init_upstream(s);
 
         return;
