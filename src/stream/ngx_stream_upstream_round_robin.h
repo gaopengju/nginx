@@ -37,8 +37,8 @@ struct ngx_stream_upstream_rr_peer_s {
     ngx_uint_t      down;         /* unsigned  down:1; */
 
 #if (NGX_STREAM_SSL)
-    void            *ssl_session;
-    int             ssl_session_len;
+    void *ssl_session;            /* 支持会话恢复 */
+    int  ssl_session_len;
 #endif
 
     ngx_stream_upstream_rr_peer_t   *next;
@@ -115,11 +115,15 @@ struct ngx_stream_upstream_rr_peers_s {
 
 #endif
 
-
+/* 注意此结构重->peers/current指针指向的数据不会被释放，为请求会话所指，因为
+   它们都是根据解析配置初始化得到的，在不同的会话被引用时，更新其维护的状态，
+   从而达到LB效果
+   
+   正是鉴于此，SSL利用其字段保存中间变量以支持会话恢复 */
 typedef struct {
     ngx_stream_upstream_rr_peers_t  *peers;    /* 关联LB配置数据, 
                                                   ngx_stream_upstream_srv_conf_t->peer.data */
-    ngx_stream_upstream_rr_peer_t   *current;  /*  */
+    ngx_stream_upstream_rr_peer_t   *current;  /* 当前选中的LB服务器 */
     uintptr_t                       *tried;    /* 服务器数量较多时：维护尝试状态位表 */
     uintptr_t                        data;     /* 服务器数量较少时：维护尝试状态位表 */
 } ngx_stream_upstream_rr_peer_data_t;

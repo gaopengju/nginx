@@ -39,14 +39,14 @@ typedef ngx_int_t (*ngx_stream_upstream_init_peer_pt)(ngx_stream_session_t *s,
 
 typedef struct {
     ngx_stream_upstream_init_pt        init_upstream;
-                                            /* 初始化LB环境
+                                            /* 初始化->data
                                                 RR: ngx_stream_upstream_init_round_robin()
                                                 hash: ngx_stream_upstream_init_hash() */
     ngx_stream_upstream_init_peer_pt   init;/* 初始化LB工作环境
                                                 rr: ngx_stream_upstream_init_round_robin_peer()
                                                 hash: ngx_stream_upstream_init_hash_peer()
                                              */
-    void                              *data;/* LB工作所需数据
+    void                              *data;/* LB配置信息, 在->init_upstream()初始化
                                                 rr: ngx_stream_upstream_rr_peers_t
                                              */
 } ngx_stream_upstream_peer_t;
@@ -70,7 +70,7 @@ typedef struct {
 
 /* 对应stream{upstream}配置解析结果 */
 struct ngx_stream_upstream_srv_conf_s {
-    ngx_stream_upstream_peer_t         peer;
+    ngx_stream_upstream_peer_t         peer;  /* LB工作所需信息 */
     void  **srv_conf;     /* server上下文环境 */
 
     ngx_array_t *servers; /* 存放server配置指令解析结果, ngx_stream_upstream_server_t */

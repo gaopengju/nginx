@@ -1169,7 +1169,7 @@ ngx_ssl_create_connection(ngx_ssl_t *ssl, ngx_connection_t *c, ngx_uint_t flags)
     return NGX_OK;
 }
 
-
+/* 设定SSL会话，以待会话恢复 */
 ngx_int_t
 ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
 {

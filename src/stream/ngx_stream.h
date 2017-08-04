@@ -146,7 +146,7 @@ typedef struct {
 } ngx_stream_core_srv_conf_t;
 
 
-/* 对应stream流信息 */
+/* 对应stream流信息，类似于七层的 ngx_http_request_t */
 struct ngx_stream_session_s {
     uint32_t  signature;         /* NGX_STREAM_MODULE, "STRM" */
 

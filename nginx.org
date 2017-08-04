@@ -707,7 +707,7 @@ nginx提供较多的负载均衡策略，包括轮询、加权轮询、IP哈希�
         -解析http{upstream{ip_hash;}},  ngx_http_upstream_ip_hash()
       -解析stream{upstream{}}四层代理, ngx_stream_upstream()
         -解析stream{upstream{hash}}, ngx_stream_upstream_hash()
-      -ngx_modules[]->ctx->init_main_conf()   初始化upstream环境
+      -ngx_modules[]->ctx->init_main_conf()   初始化upstream LB配置数据，被后续所有会话引用
       -->ngx_http_upstream_init_main_conf()     ngx_http_upstream_module模块
         -ngx_http_upstream_init_round_robin()     RR, ~/src/http/ngx_http_upstream_round_robin.c
         -ngx_http_upstream_init_ip_hash()         ip_hash, ~/src/http/modules/ngx_http_upstream_ip_hash_module.c
@@ -740,7 +740,7 @@ nginx提供较多的负载均衡策略，包括轮询、加权轮询、IP哈希�
 ** 四层代理
 #+BEGIN_EXAMPLE
 -ngx_stream_proxy_handler()           ~/src/stream/ngx_stream_proxy_module.c
-  -ngx_stream_upstream_srv_conf_t->peer.init()  初始化LB环境
+  -ngx_stream_upstream_srv_conf_t->peer.init()  初始化LB会话数据，仅关联到当前会话
     -->ngx_stream_upstream_init_round_robin_peer()   ~/src/stream/ngx_stream_upstream_round_robin.c
     -->ngx_stream_upstream_init_hash_peer()          ~/src/stream/ngx_stream_upstream_hash_module.c
   -ngx_stream_proxy_connect()
@@ -1093,4 +1093,52 @@ write event的控制，进而实现速度上限的控制。
             -ngx_stream_proxy_process()     报文处理
 #+END_EXAMPLE
 
+** 会话恢复
+会话恢复是为了节省SSL握手消耗，而从协议层面提出的性能改进方案：握手完成后，
+保存SSL链路的会话ID，握手结束关闭SSL链路；待下次握手时，利用此会话ID重启
+链路协商，如果服务器支持会话恢复，则利用保存的SSL链路配置设置此新链路，不
+需重新协商。
+
+SSL会话信息存储在ngx_stream_session_t->upstream->peer->data->current->ssl_session中，
+或存储在由配置指令zone指定的共享内存中；前者是根据stream{upstream{}}配置信
+息生成的数据结构，以记录LB负载均衡的中间状态信息(当然也包含原始配置信息)；
+这两处内存都不会随四层会话或链路数据结构释放！
+
+#+BEGIN_EXAMPLE
+以四层代理的RR LB为例，讲解SSL会话恢复流程
+
+解析流程，按照指定的LB算法，重新组织配置数据
+-main()
+  -ngx_init_cycle()
+    -ngx_conf_parse()
+      -解析stream{upstream{}}四层代理, ngx_stream_upstream()
+      -ngx_modules[]->ctx->init_main_conf()   初始化upstream LB配置数据，被后续所有会话引用
+      -->ngx_stream_upstream_init_main_conf()     ngx_stream_upstream_module
+        -ngx_stream_upstream_init_round_robin()   ~/src/stream/ngx_stream_upstream_round_robin.c
+
+连接upstream，建立SSL链路
+-ngx_stream_proxy_handler()           ~/src/stream/ngx_stream_proxy_module.c
+  -ngx_stream_upstream_srv_conf_t->peer.init()  初始化LB会话数据，仅关联到当前会话
+    -->ngx_stream_upstream_init_round_robin_peer()   ~/src/stream/ngx_stream_upstream_round_robin.c
+  -ngx_stream_proxy_connect()         ~/src/stream/ngx_stream_proxy_module.c
+    -ngx_event_connect_peer()
+      -ngx_peer_connection_t->get()             获取真实服务器
+        -->ngx_stream_upstream_get_round_robin_peer()
+      -connect()                                建立TCP链路
+    -ngx_stream_proxy_connect_handler()
+      -ngx_stream_proxy_init_upstream()
+        -ngx_stream_proxy_ssl_init_connection()
+          -ngx_ssl_create_connection()          创建SSL对象，关联插口
+          -ngx_stream_upstream_t->peer.set_session()
+          -->ngx_stream_upstream_set_round_robin_peer_session()
+                                                步骤2: 加载当前服务器上次的SSL链路会话信息，以支持会话恢复
+          -ngx_ssl_handshake()                  开始握手协商
+          -ngx_stream_proxy_ssl_handshake()
+            -SSL_get_verify_result()            验证服务器端证书
+            -ngx_stream_upstream_t->peer.save_session()
+            -->ngx_stream_upstream_save_round_robin_peer_session()
+                                                步骤1: 协商成功后，保存SSL链路会话信息
+            -ngx_stream_proxy_upstream_handler()
+              -ngx_stream_proxy_process()       报文处理
+#+END_EXAMPLE
 

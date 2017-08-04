@@ -26,7 +26,7 @@ static void ngx_stream_upstream_save_round_robin_peer_session(
 
 #endif
 
-/* RR初始化LB环境所需数据 */
+/* RR初始化LB环境所需数据, 初始化 ngx_stream_upstream_main_conf_t->upstreams[]->peer */
 ngx_int_t
 ngx_stream_upstream_init_round_robin(ngx_conf_t *cf,
     ngx_stream_upstream_srv_conf_t *us)
@@ -238,7 +238,7 @@ ngx_stream_upstream_init_round_robin(ngx_conf_t *cf,
     return NGX_OK;
 }
 
-/* RR初始化当前会话LB工作状态 */
+/* RR初始化当前会话LB数据, ngx_stream_session_t->upstream->peer.data */
 ngx_int_t
 ngx_stream_upstream_init_round_robin_peer(ngx_stream_session_t *s,
     ngx_stream_upstream_srv_conf_t *us)
@@ -595,6 +595,8 @@ ngx_stream_upstream_set_round_robin_peer_session(ngx_peer_connection_t *pc,
 
     ssl_session = peer->ssl_session;
 
+    /* 设定SSL会话，以待会话恢复时使用，
+       set a TLS/SSL session to be used during TLS/SSL connect */
     rc = ngx_ssl_set_session(pc->connection, ssl_session);
 
     ngx_log_debug1(NGX_LOG_DEBUG_STREAM, pc->log, 0,
@@ -680,8 +682,8 @@ ngx_stream_upstream_save_round_robin_peer_session(ngx_peer_connection_t *pc,
     }
 #endif
 
+    /* 获取SSL会话 */
     ssl_session = ngx_ssl_get_session(pc->connection);
-
     if (ssl_session == NULL) {
         return;
     }
@@ -689,8 +691,8 @@ ngx_stream_upstream_save_round_robin_peer_session(ngx_peer_connection_t *pc,
     ngx_log_debug1(NGX_LOG_DEBUG_STREAM, pc->log, 0,
                    "save session: %p", ssl_session);
 
+    /* 替换老会话 */
     peer = rrp->current;
-
     old_ssl_session = peer->ssl_session;
     peer->ssl_session = ssl_session;
 
@@ -700,7 +702,6 @@ ngx_stream_upstream_save_round_robin_peer_session(ngx_peer_connection_t *pc,
                        "old session: %p", old_ssl_session);
 
         /* TODO: may block */
-
         ngx_ssl_free_session(old_ssl_session);
     }
 }

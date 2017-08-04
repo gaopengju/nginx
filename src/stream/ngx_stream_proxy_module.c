@@ -34,7 +34,7 @@ typedef struct {
 
 #if (NGX_STREAM_SSL)
     ngx_flag_t                       ssl_enable;
-    ngx_flag_t                       ssl_session_reuse;
+    ngx_flag_t                       ssl_session_reuse;  /* 0/1, 对应配置“proxy_ssl_session_reuse off/on", 会话恢复 */
     ngx_uint_t                       ssl_protocols;
     ngx_str_t                        ssl_ciphers;
     ngx_str_t                        ssl_name;
@@ -524,6 +524,7 @@ ngx_stream_proxy_connect(ngx_stream_session_t *s)
 
     ngx_log_debug1(NGX_LOG_DEBUG_STREAM, c->log, 0, "proxy connect: %i", rc);
 
+
     if (rc == NGX_ERROR) {
         ngx_stream_proxy_finalize(s, NGX_ERROR);
         return;
@@ -806,8 +807,9 @@ ngx_stream_proxy_ssl_init_connection(ngx_stream_session_t *s)
             return;
         }
     }
-    /* 会话重用 */
+    /* 加载旧会话，试图会话恢复 */
     if (pscf->ssl_session_reuse) {
+        /* =ngx_stream_upstream_set_round_robin_peer_session() */
         if (u->peer.set_session(&u->peer, u->peer.data) != NGX_OK) {
             ngx_stream_proxy_finalize(s, NGX_ERROR);
             return;
@@ -866,9 +868,10 @@ ngx_stream_proxy_ssl_handshake(ngx_connection_t *pc)
                 goto failed;
             }
         }
-        /* 会话重用 */
+        /* 支持会话恢复 */
         if (pscf->ssl_session_reuse) {
             u = s->upstream;
+            /* =ngx_stream_upstream_save_round_robin_peer_session() */
             u->peer.save_session(&u->peer, u->peer.data);
         }
 
